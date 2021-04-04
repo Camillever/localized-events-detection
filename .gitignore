@@ -127,3 +127,24 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Vscode
+.vscode
+
+# Generated data
+mseeds
+sta_lta
+
+# Events data
+events_csv
+
+# Stations data
+Caracteristics_stations
+
+# Documents
+captures
+documents
+Fonctions_utiles_ref
+Kristel's results
+mseed_RESIF
+notebooks
