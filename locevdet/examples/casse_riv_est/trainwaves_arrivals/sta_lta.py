@@ -4,6 +4,7 @@ import os
 
 from locevdet.trainwaves_arrivals.sta_lta import stalta_per_event_coincidence_trigger
 from locevdet.trainwaves_arrivals.sta_lta import trainwaves_too_close_remove
+from locevdet.trainwaves_arrivals.sta_lta import false_trainwaves
 
 #paths
 mseeds_path = os.path.join("mseeds", "RESIF")
@@ -30,6 +31,10 @@ stalta_per_event_coincidence_trigger(
 
 # To remove useless trainwaves, too close of each others
 json_sta_lta_save_path = os.path.join(sta_lta_save_path, "JSON")
-intervall = 2 # in seconds
+INTERVALL = 2 # in seconds
 
-trainwaves_too_close_remove(json_sta_lta_save_path, intervall)
+trainwaves_too_close_remove(json_sta_lta_save_path, INTERVALL)
+
+# To remove false trainwaves
+OFFSET = 2 # in seconds
+false_trainwaves(mseeds_path, json_sta_lta_save_path, config["nlta_time"], time_offset=OFFSET)
