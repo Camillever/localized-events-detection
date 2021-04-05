@@ -77,12 +77,12 @@ def stalta_per_event_coincidence_trigger(folder_in:str,
         nsta = int(nsta_time*trace.stats.sampling_rate)
         nlta = int(nlta_time*trace.stats.sampling_rate)
 
-        trig = coincidence_trigger(trigger_type, thr_on, thr_off, stream=stream, 
+        trig = coincidence_trigger(trigger_type, thr_on, thr_off, stream=stream,
             thr_coincidence_sum=thr_coincidence_sum, nsta=nsta, nlta=nlta)
 
         for i,_ in enumerate(trig): # Event i in the number of global detected trainwaves
             starttime_global = UTCDateTime(trig[i]['time'])
-            trainwave = { 
+            trainwave = {
                 "starttime_global" : str(starttime_global),
                 "order_arrivals_detected" : trig[i]['stations']
             }
@@ -95,10 +95,13 @@ def stalta_per_event_coincidence_trigger(folder_in:str,
             trainwave_filepath = os.path.join(save_path_format, trainwave_filename)
 
             # Save in the given format
-            if override or not os.path.isfile(save_path_format): 
+            if override or not os.path.isfile(save_path_format):
                 if format_save == 'JSON':
                     with open(trainwave_filepath, 'w') as content:
                         json.dump(trainwave, content,  indent=1)
+
+    number_trainwaves = len(os.listdir(save_path_format))
+    return(print(f"{number_trainwaves} dictionnaires ont été importés"))
 
 def trainwaves_too_close_remove(folder_dict:str, intervall_time:float=0):
     """
@@ -131,5 +134,29 @@ def trainwaves_too_close_remove(folder_dict:str, intervall_time:float=0):
                 dict_path.remove(dictionary)
 
                 dict_removed.append(dictionary)
+    return(print(f"{len(dict_removed)} dictionnaires ont été supprimés, dont : {dict_removed}"))
 
+def false_trainwaves(seismograms_path:str, trainwaves_path:str, nlta_time:int, time_offset:int):
+    """ TODO  """
+
+    all_seismogram = [
+        filename for filename in os.listdir(seismograms_path)
+    ]
+
+    periods = get_period(all_seismogram)
+
+    all_trainwaves = [
+        trainwave_name for trainwave_name in os.listdir(trainwaves_path)
+    ]
+    dict_removed=[]
+    for period in periods: 
+        starttime_period = UTCDateTime(period.split('_')[0])
+        prohibited_period = [starttime_period, starttime_period + nlta_time +time_offset]
+        
+        for trainwave_name in all_trainwaves:
+            starttime_trainwave = UTCDateTime(get_starttime_trainwave(trainwave_name))
+            if starttime_trainwave >= prohibited_period[0] and starttime_trainwave <= prohibited_period[1]:
+                os.remove(os.path.join(trainwaves_path, trainwave_name))
+                all_trainwaves.remove(trainwave_name)
+                dict_removed.append(trainwave_name)
     return(print(f"{len(dict_removed)} dictionnaires ont été supprimés, dont : {dict_removed}"))
