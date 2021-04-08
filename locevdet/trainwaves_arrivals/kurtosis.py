@@ -3,6 +3,8 @@
 import os
 import json
 
+import matplotlib.pyplot as plt
+
 import numpy as np
 
 from obspy import UTCDateTime
@@ -13,7 +15,9 @@ from locevdet.utils import get_starttime_trainwave, get_period
 
 
 def kurtosis_for_all_seismograms(seismograms_path:str, trainwaves_path:str, 
-    pre_trigger:float, post_trigger:float):
+    pre_trigger:float, post_trigger:float,
+    freqmin:float, freqmax:float,
+    win:float=3, format_save:str="JSON"):
     """ TODO
     
     """
@@ -26,43 +30,62 @@ def kurtosis_for_all_seismograms(seismograms_path:str, trainwaves_path:str,
         trainwave_filename for trainwave_filename in os.listdir(trainwaves_path)
     ]
 
-    for filename in all_seismogram:
-        filepath = os.path.join(seismograms_path, filename)
-        seismogram = read(filepath)
+    for trainwave in all_trainwaves:
+        trainwave_path = os.path.join(trainwaves_path, trainwave)
+        with open(trainwave_path) as json_file:
+            trainwave_data = json.load(json_file)
+            start_global = UTCDateTime(trainwave_data['starttime_global'])
 
-        for _,seismo in enumerate(seismogram):
-            if seismo.stats.component == 'Z':
-                trace = seismo
-        period = get_period([filename])
-        trace_start = UTCDateTime(period[0].split('_')[0])
-        trace_end = UTCDateTime(period[0].split('_')[1])
-        print(f"trace start: {trace_start} and end: {trace_end}")
+            for filename in all_seismogram:
+                period = get_period([filename])
+                seismo_start = UTCDateTime(period[0].split('_')[0])
+                seismo_end = UTCDateTime(period[0].split('_')[1])
 
-        for trainwave in all_trainwaves:
-            utc_starttime_trainwave = get_starttime_trainwave(trainwave)
-            if utc_starttime_trainwave > trace_start and utc_starttime_trainwave < trace_end:
-                trainwave_path = os.path.join(trainwaves_path, trainwave)
-                with open(trainwave_path) as json_file:
-                    trainwave_data = json.load(json_file)
-                    print("Type:", type(trainwave_data) )
-                    print("trainwave_data :", trainwave_data)
+                for station in trainwave_data['order_arrivals_detected']:
+                    if start_global > seismo_start and start_global < seismo_end and filename.split('_')[1] == station:
+                        filepath = os.path.join(seismograms_path, filename)
+                        seismogram = read(filepath)
 
-                    start_global = UTCDateTime(trainwave_data["starttime_global"])
-                    print("start_global :", start_global, 'type :', type(start_global))
-                    print("trace.stats.starttime :", trace.stats.starttime, 'type :', type(trace.stats.starttime))
-                    
-                    offset_start_trainwave = np.abs(trace.stats.starttime - start_global)
-                    print("offset_start_trainwave :", offset_start_trainwave)
+                        for _,seismo in enumerate(seismogram):
+                            if seismo.stats.component == 'Z':
+                                trace = seismo
 
-                    pre_offset = offset_start_trainwave - pre_trigger
-                    post_offset = offset_start_trainwave + post_trigger
-                    print(f"Offsets : {pre_offset} and {post_offset}")
-                    trace_time = trace.times().copy()
-                    pre_index_time = np.where(trace_time==int(pre_offset))
-                    post_index_time = np.where(trace_time==int(post_offset))
-                    print(f"index_time : {pre_index_time} and {post_index_time}")
+                        # Filter
+                        trace.filter('bandpass', freqmin=freqmin, freqmax=freqmax)
 
-                    trace_window = trace.data[int(pre_index_time[0]) : int(post_index_time[0])]
-                    print("trace_window :", trace_window)
+                        trace_copy = trace.trim(
+                            start_global - pre_trigger,
+                            start_global + post_trigger,
+                            nearest_sample=True
+                        )
+
+                        # Kurtosis
+                        matrix_kurtosis = kurtosis(trace_copy, win)
+                        
+                        # print(np.max(matrix_kurtosis))
+                        plt.title(f"Fenêtre de visualisation : {start_global - pre_trigger} - {start_global + post_trigger}")
+                        ax1 = plt.subplot(211)
+                        ax1.set_title(f'Signal en fonction du temps - {trace.stats.station} ')
+                        ax1.plot(trace_copy.times(), trace_copy.data)
+                        ax1.set_xlabel('temps (secondes)')
+                        ax2 = plt.subplot(212)
+                        ax2.set_title(f'Kurtosis - Fenêtre glissante : {win} secondes')
+                        ax2.plot(matrix_kurtosis)
+                        plt.tight_layout()
+                        plt.show()
+                        matrix_tolist_kurtosis = matrix_kurtosis.tolist()
+
+                        # Add this matrix into trainwave dictionary
+                        try:
+                            trainwave_data["matrix_kurtosis"][station] = matrix_kurtosis
+                        except KeyError:
+                            trainwave_data["matrix_kurtosis"] = {station : matrix_kurtosis}
+
+                        # print(trainwave_data)
+
+                        # if format_save == 'JSON':
+                        #     with open(trainwave_path, 'w') as content:
+                        #         json.dump(trainwave_data, content,  indent=1)       
+
 
         
