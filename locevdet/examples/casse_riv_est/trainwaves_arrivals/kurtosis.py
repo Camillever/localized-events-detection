@@ -10,7 +10,7 @@ sta_lta_save_path = os.path.join("sta_lta", "JSON") # Trainwaves dictionaries
 PRE_TRIGGER = 5 # in seconds
 POST_TRIGGER = 10 # in seconds
 
-win = 0.2 # in seconds
+win = 0.03 # in seconds
 
 #Filter parameters
 FREQMIN=3
