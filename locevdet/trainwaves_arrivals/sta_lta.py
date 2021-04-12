@@ -82,6 +82,7 @@ def stalta_per_event_coincidence_trigger(folder_in:str,
 
         for i,_ in enumerate(trig): # Event i in the number of global detected trainwaves
             starttime_global = UTCDateTime(trig[i]['time'])
+
             trainwave = {
                 "starttime_global" : str(starttime_global),
                 "order_arrivals_detected" : trig[i]['stations']
@@ -99,6 +100,7 @@ def stalta_per_event_coincidence_trigger(folder_in:str,
                 if format_save == 'JSON':
                     with open(trainwave_filepath, 'w') as content:
                         json.dump(trainwave, content,  indent=1)
+
 
     number_trainwaves = len(os.listdir(save_path_format))
     return(print(f"{number_trainwaves} dictionnaires ont été importés"))
