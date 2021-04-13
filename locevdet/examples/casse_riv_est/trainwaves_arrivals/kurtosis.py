@@ -13,8 +13,7 @@ POST_TRIGGER = 5 # in seconds
 win = 0.03 # in seconds
 
 #Filter parameters
-FREQMIN=3
-FREQMAX=8
 
-kurtosis_for_all_seismograms(mseeds_path, sta_lta_save_path, PRE_TRIGGER, POST_TRIGGER, FREQMIN, FREQMAX, win=win)
+
+kurtosis_for_all_seismograms(mseeds_path, sta_lta_save_path, PRE_TRIGGER, POST_TRIGGER, win=win)
 
