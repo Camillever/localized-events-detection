@@ -22,16 +22,18 @@ from locevdet.trainwaves_arrivals.kurtosis import kurtosis_norm, starttimes_trig
 
 def kurt_param_sliders_per_trace(trace, start_global:UTCDateTime, kurt_norm, 
     all_starttimes_init:list, 
-    thr_off_init, thr_on_init, win_init):
+    thr_off_init, thr_on_init, win_init, 
+    numero_col_subplot, nb_stations):
     
     start_name_trace = clean_utc_str(trace.stats.starttime)
     end_name_trace = clean_utc_str(trace.stats.endtime)
 
     max_kurtosis = np.max(kurt_norm)
 
-    fig = plt.figure(f"{trace.stats.station} : {start_name_trace} - {end_name_trace}")
-    fig.suptitle(f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}")
+    # fig = plt.figure(f"{trace.stats.station} : {start_name_trace} - {end_name_trace}")
+    # fig.suptitle(f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}")
 
+    # ax1 = fig.add_subplot(2,nb_stations, numero_col_subplot)
     ax1 = plt.subplot(211)
     ax1.set_title(f'Signal en fonction du temps - {trace.stats.station} ')
     ax1.plot(trace.times(), trace.data, color='grey')
@@ -43,6 +45,7 @@ def kurt_param_sliders_per_trace(trace, start_global:UTCDateTime, kurt_norm,
     offset = start_global-trace.stats.starttime
     ax1.axvline(offset, ymin1, ymax1, color='brown')  # Is not working ??
     
+    # ax2 = fig.add_subplot(2,nb_stations, nb_stations + numero_col_subplot)
     ax2 = plt.subplot(212, sharex=ax1)
     ax2.set_title(f'Kurtosis - Décalage de la fenêtre : {win_init} secondes')
     kurto_line = ax2.plot(trace.times(), kurt_norm)
