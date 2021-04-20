@@ -6,6 +6,14 @@ import json
 import matplotlib.pyplot as plt
 import numpy as np
 
+from matplotlib.widgets import RangeSlider, Slider
+
+class RangeSlider(RangeSlider):
+
+    def __init__(self, ax, label, valmin, valmax, **kwargs):
+        self.val = (valmin, valmax)
+        super().__init__(ax, label, valmin, valmax, **kwargs)
+
 from obspy import UTCDateTime
 from obspy.core import read
 from obspy.realtime.signal import kurtosis
@@ -25,9 +33,16 @@ def starttimes_trigger_by_kurtosis(matrix_kurtosis, thr_on, thr_off):
     all_starttimes = triggertime_trainwaves_kurtosis[:,0].copy()
     return all_starttimes
 
-def kurtosis_norm(trace, win_kurt_init):
-    """ TODO
+def kurtosis_norm(trace, win_kurt_init:float):
+    """ Apply recursive kurtosis calculation on the given trace and returns a normalized kurtosis matrix.
+    (See : https://docs.obspy.org/packages/autogen/obspy.realtime.signal.kurtosis.html )
+
+    Args:
+        trace : Trace object to append to this RtTrace
+        win_kurt_init : window length in seconds for the kurtosis (shift length ?)
     
+    Returns:
+        Normalized (by numpy.linalg.norm) npdarray of the kurtosis matrix.    
     """
     matrix_kurtosis = kurtosis(trace, win_kurt_init)
     norm = np.linalg.norm(matrix_kurtosis)
@@ -60,17 +75,29 @@ def kurtosis_for_all_seismograms(seismograms_path:str, trainwaves_path:str,
     for trainwave in all_trainwaves:
         trainwave_path = os.path.join(trainwaves_path, trainwave)
         
+        numero = 0
+
         with open(trainwave_path) as json_file:
             trainwave_data = json.load(json_file)
             start_global = UTCDateTime(trainwave_data['starttime_global'])
+            lists_stations = trainwave_data['order_arrivals_detected'].copy()
+            if 'TTR' in lists_stations :
+                lists_stations.remove('TTR')
+            elif 'RER' in lists_stations :
+                lists_stations.remove('RER')
+            # print(lists_stations)
+            # fig, ax = plt.subplots(nrows=2, ncols=len(lists_stations))
 
             for filename in all_seismogram:
                 period = get_period([filename])
                 seismo_start = UTCDateTime(period[0].split('_')[0])
                 seismo_end = UTCDateTime(period[0].split('_')[1])
-
-                for station in trainwave_data['order_arrivals_detected']:
+                
+                for station in lists_stations:
+                    
+                    
                     if start_global > seismo_start and start_global < seismo_end and filename.split('_')[1] == station:
+                        numero += 1
                         filepath = os.path.join(seismograms_path, filename)
                         seismogram = read(filepath)
 
@@ -83,7 +110,9 @@ def kurtosis_for_all_seismograms(seismograms_path:str, trainwaves_path:str,
                         # Kurtosis
                         kurt_norm = kurtosis_norm(trace_trim, win)                    
                         all_starttimes_init = starttimes_trigger_by_kurtosis(kurt_norm, thr_on_init, thr_off_init)
-
+                        
+                        
+                        print(numero)
                         kurt_param_sliders_per_trace(
                             trace_trim, 
                             start_global, 
@@ -91,8 +120,12 @@ def kurtosis_for_all_seismograms(seismograms_path:str, trainwaves_path:str,
                             all_starttimes_init, 
                             thr_off_init, 
                             thr_on_init, 
-                            win
+                            win,
+                            numero, 
+                            len(lists_stations)
                         )
+           
+
 
                         
                         # # Add this matrix into trainwave dictionary
