@@ -5,6 +5,7 @@ import json
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 from matplotlib.widgets import RangeSlider, Slider
 
@@ -15,11 +16,11 @@ class RangeSlider(RangeSlider):
         super().__init__(ax, label, valmin, valmax, **kwargs)
 
 from obspy import UTCDateTime
-from obspy.core import read
+from obspy.core import read, Stream
 from obspy.realtime.signal import kurtosis
 from obspy.signal.trigger import trigger_onset
 
-from locevdet.utils import get_starttime_trainwave, get_period
+from locevdet.utils import get_starttime_trainwave, get_period, clean_utc_str
 from locevdet.waveform_processing import trim_trace
 
 # Utils 
@@ -29,7 +30,9 @@ def starttimes_trigger_by_kurtosis(matrix_kurtosis, thr_on, thr_off):
     
     """
     max_kurtosis = np.max(matrix_kurtosis)
+    # print(max_kurtosis)
     triggertime_trainwaves_kurtosis = trigger_onset(matrix_kurtosis, thr_on*max_kurtosis, thr_off*max_kurtosis) 
+    # print(triggertime_trainwaves_kurtosis)
     all_starttimes = triggertime_trainwaves_kurtosis[:,0].copy()
     return all_starttimes
 
@@ -49,13 +52,29 @@ def kurtosis_norm(trace, win_kurt_init:float):
     kurt_norm = matrix_kurtosis/norm
     return kurt_norm
 
+def kurtosis_panda(trace, win_kurt_init):
+    
+    data_pd = pd.Series(trace.data)
+    kurt = data_pd.rolling(win_kurt_init).kurt()
+
+    # Conversion to numpy array and remove 'Nan' 
+    kurt_np = kurt.to_numpy()
+    kurt_np = np.nan_to_num(kurt_np)
+
+    # Normalization
+    kurt_norm = kurt_np/ np.max(kurt_np)
+    # norm = np.linalg.norm(kurt_np)
+    # kurt_norm = kurt_np/norm
+
+    return kurt_norm
 
 # View all seismograms 
-from locevdet.visualisation.plots import kurt_param_sliders_per_trace
+# from locevdet.visualisation.plots import kurt_param_sliders_per_trace
 
-def kurtosis_for_all_seismograms(seismograms_path:str, trainwaves_path:str, 
+def kurtosistest_for_all_seismograms(seismograms_path:str, trainwaves_path:str, 
     pre_trigger:float, post_trigger:float,
-    win:float=3, format_save:str="JSON"):
+    kurtosis_type:str,
+    win:float=3):
     """ TODO
     
     """
@@ -75,168 +94,201 @@ def kurtosis_for_all_seismograms(seismograms_path:str, trainwaves_path:str,
     for trainwave in all_trainwaves:
         trainwave_path = os.path.join(trainwaves_path, trainwave)
         
-        numero = 0
+        numero = -1
 
         with open(trainwave_path) as json_file:
             trainwave_data = json.load(json_file)
             start_global = UTCDateTime(trainwave_data['starttime_global'])
+            print("start_global :", start_global)
             lists_stations = trainwave_data['order_arrivals_detected'].copy()
+
             if 'TTR' in lists_stations :
                 lists_stations.remove('TTR')
             elif 'RER' in lists_stations :
                 lists_stations.remove('RER')
-            print(lists_stations)
-            fig, ax = plt.subplots(nrows=2, ncols=len(lists_stations))
-            numero = -1
+            nb_stations = len(lists_stations)
+
+            ax = ['ax' + str(nb) for nb in range(2*nb_stations)]
+            line = ['line' + str(nb) for nb in range(2*nb_stations)]
+            vlines = ['vline' + str(nb) for nb in range(2*nb_stations)]
+            thr_line = ['thr_line' + str(nb) for nb in range(2*nb_stations)]
+
+            st = Stream()
 
             for filename in all_seismogram:
                 period = get_period([filename])
                 seismo_start = UTCDateTime(period[0].split('_')[0])
                 seismo_end = UTCDateTime(period[0].split('_')[1])
-                
+
                 for station in lists_stations:
-                    
-                    
-                    if start_global > seismo_start and start_global < seismo_end and filename.split('_')[1] == station:
+                    if start_global > seismo_start +100 and start_global < seismo_end-25 and filename.split('_')[1] == station:
                         numero += 1
+                        
+                        print('numero :', numero, 'and filename :', filename)
                         filepath = os.path.join(seismograms_path, filename)
                         seismogram = read(filepath)
-
+                        fig = plt.figure(trainwave)
                         for _,seismo in enumerate(seismogram):
                             if seismo.stats.component == 'Z':
                                 trace = seismo
-
+                        st += trace
                         trace_trim = trim_trace(trace, start_global, pre_trigger, post_trigger)
-
+                        print(trace_trim.stats.npts)
+                        
                         # Kurtosis
-                        kurt_norm = kurtosis_norm(trace_trim, win)                    
+                        if kurtosis_type == 'OBSPY':
+                            kurt_norm = kurtosis_norm(trace_trim, win) 
+                        elif kurtosis_type == 'PANDAS_ROLLING':
+                            kurt_norm = kurtosis_panda(trace_trim, win)
+                        # print(kurt_norm)                  
                         all_starttimes_init = starttimes_trigger_by_kurtosis(kurt_norm, thr_on_init, thr_off_init)
-                        
-                        
-                        # print(numero)
-                        # kurt_param_sliders_per_trace(
-                        #     trace_trim, 
-                        #     start_global, 
-                        #     kurt_norm, 
-                        #     all_starttimes_init, 
-                        #     thr_off_init, 
-                        #     thr_on_init, 
-                        #     win,
-                        #     fig,
-                        #     numero, 
-                        #     len(lists_stations)
-                        # )
-                        # start_name_trace = clean_utc_str(trace.stats.starttime)
-                        # end_name_trace = clean_utc_str(trace.stats.endtime)
+
+                        start_name_trace = clean_utc_str(trace.stats.starttime)
+                        end_name_trace = clean_utc_str(trace.stats.endtime)
 
                         max_kurtosis = np.max(kurt_norm)
 
-                        # fig = plt.figure(f"{trace.stats.station} : {start_name_trace} - {end_name_trace}")
-                        # fig.suptitle(f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}")
 
-                        ax[numero] = fig.add_subplot(2,nb_stations, numero)
-                        # ax1 = plt.subplot(211)
-                        ax[numero].set_title(f'Signal en fonction du temps - {trace_trim.stats.station} ')
+                        ## SUBPLOT SEISMOGRAM ##
+                        ax[numero] = fig.add_subplot(2,nb_stations, numero+1)
+                        ax[numero].set_title(f'{trace_trim.stats.station}')
                         ax[numero].plot(trace_trim.times(), trace_trim.data, color='grey')
-                        trace_line = ax[numero].plot(trace_trim.times(), trace_trim.data)
-                        ax[numero].set_xlabel('temps (secondes)')
+                        line[numero] = ax[numero].plot(trace_trim.times(), trace_trim.data)
                         
                         # Start global of trainwave
                         ymin1, ymax1 = ax[numero].get_ylim()
-                        offset = start_global-trace_trim.stats.starttime
-                        ax[numero].axvline(offset, ymin1, ymax1, color='brown')  # Is not working ??
+                        start_global_line1 = ax[numero].axvline(pre_trigger, -ymax1, ymax1, color='darkgreen')  # Is not working ??
                         
-                        # ax2 = fig.add_subplot(2,nb_stations, nb_stations + numero_col_subplot)
-                        ax[nb_stations + numero] = plt.subplot(212, sharex=ax[numero])
-                        ax[nb_stations + numero] .set_title(f'Kurtosis - Décalage de la fenêtre : {win_init} secondes')
-                        kurto_line = ax[nb_stations + numero] .plot(trace_trim.times(), kurt_norm)
-                        ax[nb_stations + numero] .set_ylim(top=1, bottom=0)
-                        xmin, xmax = ax[nb_stations + numero] .get_xlim()
+
+                        ## SUBPLOT KURTOSIS ##
+                        ax[nb_stations + numero] = fig.add_subplot(2,nb_stations, nb_stations + numero+1, sharex=ax[numero])
+                        ax[nb_stations + numero].set_xlabel('temps (secondes)')
+                        
+                        line[nb_stations + numero] = ax[nb_stations + numero].plot(trace_trim.times(), kurt_norm)
+                        ax[nb_stations + numero].set_ylim(top=1, bottom=0)
+                        
+                        ax[nb_stations + numero].set_ylim([0,max_kurtosis+0.1])
+                        xmin, xmax = ax[nb_stations + numero].get_xlim()
 
                         # Start global of trainwave
-                        ymin2, ymax2 = ax[nb_stations + numero] .get_ylim()
-                        ax[nb_stations + numero] .axvline(offset, ymin2, ymax2, color='brown')
+                        start_global_line2 = ax[nb_stations + numero].axvline(pre_trigger, 0, 1, color='darkgreen')
 
                         # Kurtosis threshold and start times triggered
-                        vline = ax[nb_stations + numero] .vlines(all_starttimes_init*trace.stats.delta, ymin2, ymax2, color='red')
-                        kurt_on2 = ax[nb_stations + numero] .axhline(thr_on_init*max_kurtosis, xmin, xmax, color='red',linestyle='--')
+                        all_starttimes_delta = all_starttimes_init*trace_trim.stats.delta
 
-                        # SLIDERS
+                        vlines[numero] = ax[numero].vlines(all_starttimes_delta, ymin1, ymax1, color='red')
+                        vlines[nb_stations + numero] = ax[nb_stations + numero].vlines(all_starttimes_delta, 0, 1, color='red')
 
-                        # ## Filter 
-                        # axfreq = plt.axes([0.25, 0.2, 0.65, 0.03])
-                        # freq_slider = RangeSlider(
-                        #     ax=axfreq, 
-                        #     label='Frequency (Hz)',
-                        #     valmin=0.05, 
-                        #     valmax=49.5,
-                        #     valinit=(0.05, 49.5)
-                        # )
+                        thr_line[nb_stations + numero] = ax[nb_stations + numero].axhline(thr_on_init*max_kurtosis, xmin, xmax, color='red',linestyle='--')
+                
+
+                ## Update sliders
+                def update(val):
+                    # Values of sliders
+                    freqmin_filt = freq_slider.val[0]
+                    freqmax_filt = freq_slider.val[1]
+
+                    new_win = win_slider.val
+
+                    new_thr_off = trig_slider.val[0]
+                    new_thr_on = trig_slider.val[1]
+
+                    for nb, trace in enumerate(st) :
+                        trace_trim = trim_trace(trace, start_global, pre_trigger, post_trigger)
+                        trace_trim_copy = trace_trim.copy()
+                        trace_filtered = trace_trim_copy.filter('bandpass', freqmin=freqmin_filt, freqmax=freqmax_filt)
                         
-                        # ## Window for kurtosis
-                        # axwin = plt.axes([0.25, 0.15, 0.65, 0.03])
-                        # win_slider = Slider(
-                        #     ax=axwin, 
-                        #     label='Kurtosis : Window shift (s)',
-                        #     valmin=0.02, 
-                        #     valmax=0.05,
-                        #     valinit=win_init, 
-                        #     valstep=0.005
-                        # )
+                        if kurtosis_type == 'OBSPY':
+                            new_kurt_norm = kurtosis_norm(trace_filtered, new_win)
+                        elif kurtosis_type == 'PANDAS_ROLLING':
+                            new_kurt_norm = kurtosis_panda(trace_filtered, new_win)
+                         
+                        new_max_kurtosis = np.max(new_kurt_norm)
 
-                        # ## Trigger on
-                        # axtrig_on = plt.axes([0.25, 0.1, 0.65, 0.03])
-                        # trig_slider = RangeSlider(
-                        #     ax=axtrig_on, 
-                        #     label='Threshold (%)',
-                        #     valmin=0, 
-                        #     valmax=1,
-                        #     valinit=(thr_off_init, thr_on_init)
-                        # )
+                        thr_off_val = new_thr_off * new_max_kurtosis
+                        thr_on_val = new_thr_on * new_max_kurtosis
 
-                        # ## Update sliders
-                        # def update(val):
-                        #     # Filter
-                        #     freqmin_filt = freq_slider.val[0]
-                        #     freqmax_filt = freq_slider.val[1]
-                            
-                        #     trace_trim_copy = trace.copy()
-                        #     trace_filtered = trace_trim_copy.filter('bandpass', freqmin=freqmin_filt, freqmax=freqmax_filt)
-                        #     trace_line[0].set_ydata(trace_filtered.data) 
-
-                        #     # Kurtosis
-                        #     new_win = win_slider.val
-                        #     new_kurt_norm = kurtosis_norm(trace_filtered, new_win)
-                            
-                        #     new_max_kurtosis = np.max(new_kurt_norm)
-                            
-                        #     kurto_line[0].set_ydata(new_kurt_norm)
-                        #     new_win_3decim = "{:.3f}".format(new_win)
-                        #     ax2.set_title(f'Kurtosis - Décalage de la fenêtre : {new_win_3decim} secondes')
-                            
-                        #     # Threshold
-                        #     new_thr_off = trig_slider.val[0]
-                        #     new_thr_on = trig_slider.val[1]
-                        #     thr_off_val = new_thr_off * new_max_kurtosis
-                        #     thr_on_val = new_thr_on * new_max_kurtosis
-                        #     kurt_on2.set_ydata(thr_on_val)
-
-                        #     new_all_starttimes = starttimes_trigger_by_kurtosis(new_kurt_norm, new_thr_on, new_thr_off)
-
-                        #     xvline = new_all_starttimes * trace_filtered.stats.delta
-                        #     delta = trace_filtered.stats.delta
-                        #     seg_new = [np.array([[x*delta, ymin2], [x*delta, ymax2]]) for x in new_all_starttimes] 
-                        #     vline.set_segments(seg_new)
-                            
-                        #     plt.draw()
+                        new_all_starttimes = starttimes_trigger_by_kurtosis(new_kurt_norm, new_thr_on, new_thr_off)
+                        tr_delta = trace_filtered.stats.delta
                         
-                        # freq_slider.on_changed(update)
-                        # win_slider.on_changed(update)
-                        # trig_slider.on_changed(update)
 
-                        plt.subplots_adjust(bottom=0.28, wspace=0.4, hspace=0.4)
-                        plt.show()
+                        # #Update of plots
+                        line[nb][0].set_ydata(trace_filtered.data)
+                        line[nb + nb_stations][0].set_ydata(new_kurt_norm)
+                        # new_win_3decim = "{:.3f}".format(new_win)
+                        # ax2.set_title(f'Kurtosis - Décalage de la fenêtre : {new_win_3decim} s')
 
+                        ax[nb + nb_stations].set_ylim([0,new_max_kurtosis+0.1])
+
+                        xvline = new_all_starttimes * tr_delta
+                        seg_new = [np.array([[x*tr_delta, 0], [x*tr_delta, 1]]) for x in new_all_starttimes] 
+
+
+                        thr_line[nb + nb_stations].set_ydata(thr_on_val)
+                        vlines[nb].set_segments(seg_new)
+                        vlines[nb + nb_stations].set_segments(seg_new)
+                        
+
+                    fig.canvas.draw_idle()
+        # SLIDERS
+            if len(st)!=0:
+                ## Filter 
+                axfreq = fig.add_axes([0.25, 0.2, 0.65, 0.03])
+                freq_slider = RangeSlider(
+                    ax=axfreq, 
+                    label='Frequency (Hz)',
+                    valmin=0.05, 
+                    valmax=49.5,
+                    valinit=(0.05, 49.5), 
+                    valstep=0.05
+                )
+                
+                ## Window for kurtosis
+                if kurtosis_type == 'OBSPY':
+                    axwin = fig.add_axes([0.25, 0.15, 0.65, 0.03])
+                    win_slider = Slider(
+                        ax=axwin, 
+                        label='Kurtosis : Window shift (s)',
+                        valmin=0.02, 
+                        valmax=0.05,
+                        valinit=win, 
+                        valstep=0.005
+                    )
+                        
+                elif kurtosis_type == 'PANDAS_ROLLING':
+                    axwin = fig.add_axes([0.25, 0.15, 0.65, 0.03])
+                    win_slider = Slider(
+                        ax=axwin, 
+                        label='Kurtosis : Window shift (s)',
+                        valmin=4, 
+                        valmax=500,
+                        valinit=win, 
+                        valstep=2
+                    )
+
+                         
+                
+
+                ## Trigger on
+                axtrig_on = fig.add_axes([0.25, 0.1, 0.65, 0.03])
+                trig_slider = RangeSlider(
+                    ax=axtrig_on, 
+                    label='Threshold (%)',
+                    valmin=0, 
+                    valmax=1,
+                    valinit=(thr_off_init, thr_on_init)
+                )
+                
+                if len(st)!=0:
+                    freq_slider.on_changed(update)
+                    win_slider.on_changed(update)
+                    trig_slider.on_changed(update)
+                    fig.suptitle(f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}")
+                    print(f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}")
+                    plt.subplots_adjust(bottom=0.28, wspace=0.4, hspace=0.4)
+                    plt.show()
+
+                    print('Done')
 
                         
                         # # Add this matrix into trainwave dictionary
@@ -249,5 +301,121 @@ def kurtosis_for_all_seismograms(seismograms_path:str, trainwaves_path:str,
 
                         # # if format_save == 'JSON':
                         # #     with open(trainwave_path, 'w') as content:
-                        # #         json.dump(trainwave_data, content,  indent=1)       
+                        # #         json.dump(trainwave_data, content,  indent=1) 
+
+
+
+def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str, 
+    pre_trigger:float, post_trigger:float,
+    thr_on:float, win:float,
+    freqmin:int=0.05, freqmax:int=50):
+
+    all_seismogram = [
+        filename for filename in os.listdir(seismograms_path)
+        if not filename.startswith('G_RER') 
+        if not filename.startswith('PF_TTR')
+    ]
+    
+    all_trainwaves = [
+        trainwave_filename for trainwave_filename in os.listdir(trainwaves_path)
+    ]
+    for trainwave in all_trainwaves:
+        trainwave_path = os.path.join(trainwaves_path, trainwave)
+        
+        numero = -1
+
+        with open(trainwave_path) as json_file:
+            trainwave_data = json.load(json_file)
+            start_global = UTCDateTime(trainwave_data['starttime_global'])
+            print("start_global :", start_global)
+            lists_stations = trainwave_data['order_arrivals_detected'].copy()
+
+            if 'TTR' in lists_stations :
+                lists_stations.remove('TTR')
+            elif 'RER' in lists_stations :
+                lists_stations.remove('RER')
+            nb_stations = len(lists_stations)
+
+            ax = ['ax' + str(nb) for nb in range(2*nb_stations)]
+            line = ['line' + str(nb) for nb in range(2*nb_stations)]
+            vlines = ['vline' + str(nb) for nb in range(2*nb_stations)]
+            thr_line = ['thr_line' + str(nb) for nb in range(2*nb_stations)]
+
+            st = Stream()
+
+            for filename in all_seismogram:
+                period = get_period([filename])
+                seismo_start = UTCDateTime(period[0].split('_')[0])
+                seismo_end = UTCDateTime(period[0].split('_')[1])
+
+                for station in lists_stations:
+                    if start_global > seismo_start +100 and start_global < seismo_end-25 and filename.split('_')[1] == station:
+                        numero += 1
+                        
+                        print('numero :', numero, 'and filename :', filename)
+                        filepath = os.path.join(seismograms_path, filename)
+                        seismogram = read(filepath)
+                        fig = plt.figure(trainwave)
+                        for _,seismo in enumerate(seismogram):
+                            if seismo.stats.component == 'Z':
+                                trace = seismo
+                                
+                        st += trace
+                        trace_trim = trim_trace(trace, start_global, pre_trigger, post_trigger)
+                        trace_filtered = trace_trim.filter('bandpass', freqmin=freqmin, freqmax=freqmax)
+                        
+                        
+                        # Kurtosis
+                        kurt_norm = kurtosis_panda(trace_filtered, win)
+                        # print(kurt_norm)
+                        thr_off = 0.25             
+                        all_starttimes_init = starttimes_trigger_by_kurtosis(kurt_norm, thr_on, thr_off)
+
+                        start_name_trace = clean_utc_str(trace.stats.starttime)
+                        end_name_trace = clean_utc_str(trace.stats.endtime)
+
+                        max_kurtosis = np.max(kurt_norm)
+
+
+                        ## SUBPLOT SEISMOGRAM ##
+                        ax[numero] = fig.add_subplot(2,nb_stations, numero+1)
+                        ax[numero].set_title(f'{trace_filtered.stats.station}')
+                        ax[numero].plot(trace_filtered.times(), trace_filtered.data, color='grey')
+                        line[numero] = ax[numero].plot(trace_filtered.times(), trace_filtered.data)
+                        
+                        # Start global of trainwave
+                        ymin1, ymax1 = ax[numero].get_ylim()
+                        start_global_line1 = ax[numero].axvline(pre_trigger, -ymax1, ymax1, color='darkgreen')  # Is not working ??
+                        
+
+                        ## SUBPLOT KURTOSIS ##
+                        ax[nb_stations + numero] = fig.add_subplot(2,nb_stations, nb_stations + numero+1, sharex=ax[numero])
+                        ax[nb_stations + numero].set_xlabel('temps (secondes)')
+                        
+                        line[nb_stations + numero] = ax[nb_stations + numero].plot(trace_filtered.times(), kurt_norm)
+                        ax[nb_stations + numero].set_ylim(top=1, bottom=0)
+                        
+                        ax[nb_stations + numero].set_ylim([0,max_kurtosis+0.1])
+                        xmin, xmax = ax[nb_stations + numero].get_xlim()
+
+                        # Start global of trainwave
+                        start_global_line2 = ax[nb_stations + numero].axvline(pre_trigger, 0, 1, color='darkgreen')
+
+                        # Kurtosis threshold and start times triggered
+                        all_starttimes_delta = all_starttimes_init*trace_filtered.stats.delta
+
+                        vlines[numero] = ax[numero].vlines(all_starttimes_delta, ymin1, ymax1, color='red')
+                        vlines[nb_stations + numero] = ax[nb_stations + numero].vlines(all_starttimes_delta, 0, 1, color='red')
+
+                        thr_line[nb_stations + numero] = ax[nb_stations + numero].axhline(thr_on*max_kurtosis, xmin, xmax, color='red',linestyle='--')
+            if len(st)!=0:
+                fig.suptitle(f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}")
+                print(f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}")
+                plt.tight_layout()
+                plt.show()
+
+
+
+
+
 
