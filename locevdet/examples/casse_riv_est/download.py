@@ -16,7 +16,7 @@ HIM_csv_events = os.path.join("events_csv", "HIM_01-02-2020_11-02-2020_MC3_dump_
 mseeds_client_path = os.path.join("mseeds", CLIENT)
 
 # Catalog events (2020-02-01 to 2020-02-11)
-early_feb_events_times = read_events_times_from_csv(HIM_csv_events, time_offset=(110, 35))
+early_feb_events_times = read_events_times_from_csv(HIM_csv_events, time_offset=(35, 35))
 download_from_stations(
     CLIENT,
     network="PF",
