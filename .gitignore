@@ -134,9 +134,11 @@ dmypy.json
 # Generated data
 mseeds
 sta_lta
+kurtosis
 
 # Events data
 events_csv
+results_matlab
 
 # Stations data
 Caracteristics_stations
@@ -148,3 +150,4 @@ Fonctions_utiles_ref
 Kristel's results
 mseed_RESIF
 notebooks
+topo
