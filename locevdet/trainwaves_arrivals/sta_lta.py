@@ -2,24 +2,24 @@
 
 import os
 
+from typing import List
+
 import numpy as np
 
 from tqdm import tqdm
-from typing import List
 
 from obspy.core import Stream, read
 from obspy.signal.trigger import coincidence_trigger
 from obspy import UTCDateTime
 
-from locevdet.utils import get_info_from_mseedname, clean_utc_str, get_starttime_trainwave
-from locevdet.event import Event
+from locevdet.utils import get_info_from_mseedname
+from locevdet.event import Event, EventList
 from locevdet.stations import STATIONS_NETWORKS
 
-def stalta_per_event_coincidence_trigger(folder_in:str,
-        freqmin:int, freqmax:int,
+def stalta_detect_events(folder_in:str, freqmin:int, freqmax:int,
         nsta_time:int, nlta_time:int, thr_on:float, thr_off:float,
         trigger_type:str="classicstalta", thr_coincidence_sum:int=1,
-        save_path:str=None, format_save:str='JSON', override:bool=False, sampling_rate=100):
+        sampling_rate=100) -> EventList:
     """
     Save dictionaries for each trainwaves detected
     containing global start time and order of station's arrivals.
@@ -49,17 +49,11 @@ def stalta_per_event_coincidence_trigger(folder_in:str,
         filename for filename in os.listdir(folder_in)
     ]
 
-    # List all perioformat = os.ds of events
-    period_filename = list(set(get_info_from_mseedname(filename, 'periodtime') 
+    period_filename = list(set(get_info_from_mseedname(filename, 'periodtime')
         for filename in all_seismogram))
+    period_filename.sort()
 
-    if save_path is None:
-        save_path = os.getcwd()
-    save_path_format = os.path.join(save_path, format_save)
-    os.makedirs(save_path_format, exist_ok=True)
-
-    event_list = []
-
+    event_list = EventList()
     for period_name in tqdm(period_filename):
         stream = Stream()
         for mseed_name in all_seismogram:
@@ -81,23 +75,17 @@ def stalta_per_event_coincidence_trigger(folder_in:str,
                 stream[stream_stations.index(station)]
                 for station in triggered_event['stations']
             ]
+
             stations = [
                 STATIONS_NETWORKS[trace.stats.network][trace.stats.station]
                 for trace in traces
             ]
-            event = Event(
-                start_global=start_global,
-                stations=stations
-            )
+
+            event = Event(start_global=start_global, stations=stations)
             event.add_trainwaves(stream)
-            trainwave_filename = '_'.join(('trainwave', clean_utc_str(start_global)))
-            trainwave_filepath = os.path.join(save_path_format, trainwave_filename)
-            event.save(trainwave_filepath, format_save="JSON", override=override)
             event_list.append(event)
-    
-    event_list.save(trainwave_filepath)
-    number_trainwaves = len(os.listdir(save_path_format))
-    return number_trainwaves
+
+    return event_list
 
 
 def build_period_stream(period_name, folder_in, mseed_name, stream, filter_band, sampling_rate):
@@ -112,74 +100,54 @@ def build_period_stream(period_name, folder_in, mseed_name, stream, filter_band,
         trace.filter('bandpass', freqmin=filter_band[0], freqmax=filter_band[1])
         stream += trace
 
-def trainwaves_too_close_remove(folder_dict:str, intervall_time:float=0):
+def remove_too_close_trainwaves(event_list:EventList, minimum_time:float=0)-> List[str]:
     """
     Delete trainwaves dictionaries too close of each others in the given intervall time
     (Each supplement trainwave is considered as a duplicate)
 
     Args:
-        folder_dict: Directory path of the trainwaves dictionnaries
-        intervall_time: TODO
+        event_list: TODO
+        minimum_time: TODO
 
     Returns:
         List of dictionaries of deleted files
 
     """
-    dict_path = os.listdir(folder_dict)
-    dict_removed=[]
+    events_removed = []
 
-    for dictionary in dict_path :
-        utc_starttime_dict = UTCDateTime(get_starttime_trainwave(dictionary))
+    for event in event_list:
+        utc_start = UTCDateTime(event.start_global)
+        for other_event in event_list:
+            utc_start_other = UTCDateTime(other_event.start_global)            
+            if event != other_event and np.abs(utc_start - utc_start_other) <= minimum_time:
+                event_list.remove(other_event)
+                events_removed.append(other_event.start_global)
+    return events_removed
 
-        for other_dict in dict_path:
-
-            if other_dict == dictionary:
-                continue
-
-            utc_starttime_otherdict = UTCDateTime(get_starttime_trainwave(other_dict))
-
-            if np.abs(utc_starttime_dict - utc_starttime_otherdict) <=intervall_time:
-                os.remove(os.path.join(folder_dict,dictionary))
-                dict_path.remove(dictionary)
-
-                dict_removed.append(dictionary)
-    return dict_removed
-
-
-def false_trainwaves(seismograms_path:str,trainwaves_path:str, 
-    nlta_time:int, time_offset:int)-> List[str]:
+def remove_border_stalta_false_trainwaves(event_list:EventList, nlta_time:int, 
+        uncertainty_ratio:float=0.05)-> List[str]:
     
-    """ Delete false start time detected by STA-LTA during the LTA time-window for each seismogram 
-    
+    """ TODO
+
     Args:
-        seismograms_path: Directory path of MSEEDS seismograms
-        trainwaves_path : Directory path of trainwaves dictionaries
+        event_list : TODO
         nlta_time : Time length of the LTA rolling window
-        time_offset: Offset in seconds added to the nlta_time 
-            to be certain to count false trainwaves closed to this period nlta.
 
     Returns:
-        List of removed false trainwaves dictionaries
+        TODO
     """
+    events_removed = []
 
-    all_seismogram = [
-        filename for filename in os.listdir(seismograms_path)
-    ]
+    for event in event_list:
+        utc_start = UTCDateTime(event.start_global)
+        for _, trainwave in event.trainwaves.items():
+            start_of_one_rawsignal = UTCDateTime(trainwave.trace.stats.starttime)
+            break
 
-    periods = list(set(get_info_from_mseedname(filename, 'periodtime') for filename in all_seismogram))
+        uncertainty_time = uncertainty_ratio * nlta_time
+        limit_time = start_of_one_rawsignal + nlta_time + uncertainty_time
 
-    all_trainwaves = [
-        trainwave_name for trainwave_name in os.listdir(trainwaves_path)
-    ]
-    dict_removed=[]
-    for period in periods: 
-        starttime_period = UTCDateTime(period.split('_')[0])
-        prohibited_period = [starttime_period, starttime_period + nlta_time +time_offset]
-        
-        for trainwave_name in all_trainwaves:
-            starttime_trainwave = UTCDateTime(get_starttime_trainwave(trainwave_name))
-            if starttime_trainwave >= prohibited_period[0] and starttime_trainwave <= prohibited_period[1]:
-                os.remove(os.path.join(trainwaves_path, trainwave_name))
-                all_trainwaves.remove(trainwave_name)
-                dict_removed.append(trainwave_name)
-    return dict_removed
+        if utc_start >= start_of_one_rawsignal and utc_start <= limit_time :
+            event_list.remove(event)
+            events_removed.append(utc_start)
+    return events_removed

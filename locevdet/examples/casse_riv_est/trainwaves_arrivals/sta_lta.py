@@ -3,11 +3,11 @@
 
 import os
 
-from locevdet.trainwaves_arrivals.sta_lta import stalta_per_event_coincidence_trigger
-from locevdet.trainwaves_arrivals.sta_lta import trainwaves_too_close_remove
-from locevdet.trainwaves_arrivals.sta_lta import false_trainwaves
+from locevdet.trainwaves_arrivals.sta_lta import stalta_detect_events
+from locevdet.trainwaves_arrivals.sta_lta import remove_too_close_trainwaves
+from locevdet.trainwaves_arrivals.sta_lta import remove_border_stalta_false_trainwaves
 
-#paths
+#Paths
 mseeds_path = os.path.join("mseeds", "RESIF")
 sta_lta_save_path = os.path.join("sta_lta")
 
@@ -22,25 +22,29 @@ config = {
     "thr_on": 2.9,
     "thr_off": 1,
     "thr_coincidence_sum": 2,
-    "override":True
 }
 
-number_trainwaves = stalta_per_event_coincidence_trigger(
+event_list = stalta_detect_events(
     folder_in=mseeds_path,
-    save_path=sta_lta_save_path,
     **config
 )
-print(f"{number_trainwaves} dictionnaires ont été importés")
+print(f"Events ({len(event_list)}): {event_list}")
 
 # To remove useless trainwaves, too close of each others
-json_sta_lta_save_path = os.path.join(sta_lta_save_path, "JSON")
-INTERVALL = 2 # in seconds
-
-dict_removed = trainwaves_too_close_remove(json_sta_lta_save_path, INTERVALL)
+dict_removed = remove_too_close_trainwaves(event_list, minimum_time=2)
 print(f"{len(dict_removed)} dictionnaires ont été supprimés, dont : {dict_removed}")
 
 # To remove false trainwaves
-OFFSET = 2 # in seconds
-dict_removed = false_trainwaves(mseeds_path,
-    json_sta_lta_save_path, config["nlta_time"], time_offset=OFFSET)
-print(f"{len(dict_removed)} dictionnaires ont été supprimés, dont : {dict_removed}")
+events_removed = remove_border_stalta_false_trainwaves(event_list, config["nlta_time"])
+print(f"{len(events_removed)} dictionnaires ont été supprimés, dont : {events_removed}")
+
+# Save EventList
+eventlist_pickle_filepath = os.path.join('data', 'eventlist', 'eventlist_01-02-2020_11-02-2020.pkl')
+event_list.save(eventlist_pickle_filepath, override=True)
+
+### To visualize this save
+# import pickle
+# with open(eventlist_pickle_filepath, "rb") as content:
+#     evenlist = pickle.load(content)
+# # print(evenlist)
+# print(len(evenlist))
