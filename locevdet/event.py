@@ -1,24 +1,31 @@
+""" Classes Trainwave / Event / Eventlist"""
+
 import os
+
 import json
+import pickle
+
 from typing import List
 
 from obspy.core import Stream
 
 from locevdet.stations import Station
-from locevdet.seismograms import Trace
 from locevdet.utils import clean_utc_str
 
 class Trainwave():
 
-    def __init__(self, signal:Trace, station:Station, **kwargs):
-        self.signal_associated = signal
+    def __init__(self, trace, station:Station, **kwargs):
+        self.trace = trace
         self.station = station
 
         self.start_specific = kwargs.get('start_specific', None)
         self.kurtosis_params = kwargs.get('kurtosis_params', None)
 
+    def get_data_from_matlab_file(self, matlab_filepath):
+        raise NotImplementedError
+
     def __repr__(self):
-        return f"{self.signal.shape} ({self.station})"
+        return f"Trainwave{self.trace}"
 
 class Event():
 
@@ -31,33 +38,39 @@ class Event():
         stream_stations = [trace.stats.station for trace in stream]
         for station in self.stations:
             station_index = stream_stations.index(station.name)
-            signal = stream[station_index].data
-            self.trainwaves[station] = Trainwave(signal, station)
+            trace = stream[station_index]
+            self.trainwaves[station] = Trainwave(trace, station)
+    
+
+    def to_json(self):
+        return {
+            'start_global': str(self.start_global),
+            'stations': str(self.stations)
+        }
 
     def save(self, filepath, format_save, override=False):
         if override or not os.path.isfile(filepath):
             if format_save == 'JSON':
-                jsonable_event = {
-                    'start_global': self.start_global,
-                    'stations': self.stations
-                }
                 with open(filepath, 'w') as content:
-                    json.dump(jsonable_event, content,  indent=1)
-            
-            # elif format_save == 'PICKLE':
+                    json.dump(self.to_json(), content,  indent=1)
 
-            #     picklable_event = 
+    def __eq__(self, other):
+        if isinstance(other, Event):
+            return self.start_global == other.start_global
+        else:
+            raise TypeError("Only two Events can be compared")
 
-
-            #     with open(filepath, 'w') as content:
-            #         pickle.dump(picklable_event, content)
+    def __str__(self):
+        return clean_utc_str(self.start_global)
 
     def __repr__(self):
-        return f"Start global: {clean_utc_str(self.start_global)} {self.trainwaves}"
+        return f"Event({str(self)}, {self.trainwaves})"
 
-class EventList():
+class EventList(list):
 
     def __init__(self, events:List[Event]=None):
+        events = events if events is not None else []
+        super().__init__(events)
         if events is None:
             self.events = []
         else:
@@ -65,12 +78,15 @@ class EventList():
                 if not isinstance(event, Event):
                     raise TypeError('EventList must be composed of Event objects')
             self.events = events
-    
-    def append(self, event:Event):
-        self.events.append(event) 
-    
+
+    def to_json(self):
+        return {str(event): event.to_json() for event in self.events}
+
     def save(self, filepath, format_save='PICKLE', override=False):
-        self.save = Event.save(self, filepath, format_save, override)  # Save each event , doesn't it ? How save the List of events? 
-
-
-
+        if override or not os.path.isfile(filepath):
+            if format_save == 'JSON':
+                with open(filepath, 'w') as content:
+                    json.dump(self.to_json(), content,  indent=1)
+            elif format_save == 'PICKLE':
+                with open(filepath, 'wb') as content:
+                    pickle.dump(self, content)
