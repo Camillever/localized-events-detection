@@ -2,6 +2,7 @@
 
 from typing import Tuple, List
 from obspy import UTCDateTime
+from mat4py import loadmat
 
 def clean_utc_str(utc_datetime:UTCDateTime) -> str:
     """
@@ -18,8 +19,9 @@ def clean_utc_str(utc_datetime:UTCDateTime) -> str:
     return str(utc_datetime).split('.')[0].replace(':','-')
 
 
-def ref_duration_to_time_window(time_reference:UTCDateTime, duration:float,
-        time_offset:Tuple[int]=(0, 0)) -> Tuple[float]:
+def ref_duration_to_time_window(time_reference:UTCDateTime, duration:float=0, 
+    endtime:UTCDateTime=None,
+    time_offset:Tuple[int]=(0, 0)) -> Tuple[float]:
     """
     TODO
 
@@ -32,10 +34,14 @@ def ref_duration_to_time_window(time_reference:UTCDateTime, duration:float,
         TODO
     """
     start_time = time_reference - time_offset[0]
-    end_time = time_reference + duration + time_offset[1]
+
+    if endtime is None:
+        end_time = time_reference + duration + time_offset[1]
+    else:
+        end_time = endtime + time_offset[1]
     return start_time, end_time
 
-def get_info_from_mseedname(filename:str, type_info:str)-> str:
+def get_info_from_mseedname(filename:str, info_type:str)-> str:
     """
     Args:
         filename : Name of the mseed file
@@ -118,13 +124,40 @@ def ti_matlab_results(matlab_folder_path, filename_matlab:str):
     TODO
     """
     import os
-    from mat4py import loadmat
+    
 
     file_path = os.path.join(matlab_folder_path, filename_matlab)
     mat = loadmat(file_path)
 
     ti = mat['wavetrains']['ti'][0]
-    return ti
+    return 
+
+# def get_info_from_matfile(filepath:str, 
+#         info_type:str=''):
+#     """
+#     Extracts the given information from the matlab file.
+
+#     Args:
+#         info_type : Type of information extracted
+#             - 'fmin' : Minimum frequency considered for all wavetrains 
+#             - 'total_disp_time' : Total displacement time history
+#             - 'duration' :
+#             - 'radial' :
+#             - 'azimuth' :
+#             - 'Vert_comp' :
+#             - 'North_comp' :
+#             - 'East_comp' :
+#             - 'correl_coeff' :
+#             - 'time_central' :
+#             - 'amplitude' :
+#             - 'amplification' :
+#             - 'frwidth' : Frequency width of wavetrain
+#             - 'Time_vec' : Time vector of wavetrain
+#             - 'ti' : Initial time of wavetrain 
+
+#     """
+#     mat = loadmat(filepath)
+
 
 def ti_to_utcdatetime(filename_matlab:str, ti:float):
     """
