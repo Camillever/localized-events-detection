@@ -18,123 +18,123 @@ from tqdm import tqdm
 from obspy import UTCDateTime
 
 from locevdet.utils import clean_utc_str
-from locevdet.trainwaves_arrivals.kurtosis import kurtosis_norm, starttimes_trigger_by_kurtosis
+# from locevdet.trainwaves_arrivals.kurtosis import kurtosis_norm, starttimes_trigger_by_kurtosis
 
-def kurt_param_sliders_per_trace(trace, start_global:UTCDateTime, kurt_norm, 
-    all_starttimes_init:list, 
-    thr_off_init, thr_on_init, win_init, 
-    numero_col_subplot, nb_stations):
+# def kurt_param_sliders_per_trace(trace, start_global:UTCDateTime, kurt_norm, 
+#     all_starttimes_init:list, 
+#     thr_off_init, thr_on_init, win_init, 
+#     numero_col_subplot, nb_stations):
     
-    start_name_trace = clean_utc_str(trace.stats.starttime)
-    end_name_trace = clean_utc_str(trace.stats.endtime)
+#     start_name_trace = clean_utc_str(trace.stats.starttime)
+#     end_name_trace = clean_utc_str(trace.stats.endtime)
 
-    max_kurtosis = np.max(kurt_norm)
+#     max_kurtosis = np.max(kurt_norm)
 
-    # fig = plt.figure(f"{trace.stats.station} : {start_name_trace} - {end_name_trace}")
-    # fig.suptitle(f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}")
+#     # fig = plt.figure(f"{trace.stats.station} : {start_name_trace} - {end_name_trace}")
+#     # fig.suptitle(f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}")
 
-    # ax1 = fig.add_subplot(2,nb_stations, numero_col_subplot)
-    ax1 = plt.subplot(211)
-    ax1.set_title(f'Signal en fonction du temps - {trace.stats.station} ')
-    ax1.plot(trace.times(), trace.data, color='grey')
-    trace_line = ax1.plot(trace.times(), trace.data)
-    ax1.set_xlabel('temps (secondes)')
+#     # ax1 = fig.add_subplot(2,nb_stations, numero_col_subplot)
+#     ax1 = plt.subplot(211)
+#     ax1.set_title(f'Signal en fonction du temps - {trace.stats.station} ')
+#     ax1.plot(trace.times(), trace.data, color='grey')
+#     trace_line = ax1.plot(trace.times(), trace.data)
+#     ax1.set_xlabel('temps (secondes)')
     
-    # Start global of trainwave
-    ymin1, ymax1 = ax1.get_ylim()
-    offset = start_global-trace.stats.starttime
-    ax1.axvline(offset, ymin1, ymax1, color='brown')  # Is not working ??
+#     # Start global of trainwave
+#     ymin1, ymax1 = ax1.get_ylim()
+#     offset = start_global-trace.stats.starttime
+#     ax1.axvline(offset, ymin1, ymax1, color='brown')  # Is not working ??
     
-    # ax2 = fig.add_subplot(2,nb_stations, nb_stations + numero_col_subplot)
-    ax2 = plt.subplot(212, sharex=ax1)
-    ax2.set_title(f'Kurtosis - Décalage de la fenêtre : {win_init} secondes')
-    kurto_line = ax2.plot(trace.times(), kurt_norm)
-    ax2.set_ylim(top=1, bottom=0)
-    xmin, xmax = ax2.get_xlim()
+#     # ax2 = fig.add_subplot(2,nb_stations, nb_stations + numero_col_subplot)
+#     ax2 = plt.subplot(212, sharex=ax1)
+#     ax2.set_title(f'Kurtosis - Décalage de la fenêtre : {win_init} secondes')
+#     kurto_line = ax2.plot(trace.times(), kurt_norm)
+#     ax2.set_ylim(top=1, bottom=0)
+#     xmin, xmax = ax2.get_xlim()
 
-    # Start global of trainwave
-    ymin2, ymax2 = ax2.get_ylim()
-    ax2.axvline(offset, ymin2, ymax2, color='brown')
+#     # Start global of trainwave
+#     ymin2, ymax2 = ax2.get_ylim()
+#     ax2.axvline(offset, ymin2, ymax2, color='brown')
 
-    # Kurtosis threshold and start times triggered
-    vline = ax2.vlines(all_starttimes_init*trace.stats.delta, ymin2, ymax2, color='red')
-    kurt_on2 = ax2.axhline(thr_on_init*max_kurtosis, xmin, xmax, color='red',linestyle='--')
+#     # Kurtosis threshold and start times triggered
+#     vline = ax2.vlines(all_starttimes_init*trace.stats.delta, ymin2, ymax2, color='red')
+#     kurt_on2 = ax2.axhline(thr_on_init*max_kurtosis, xmin, xmax, color='red',linestyle='--')
 
-    # SLIDERS
+#     # SLIDERS
 
-    ## Filter 
-    axfreq = plt.axes([0.25, 0.2, 0.65, 0.03])
-    freq_slider = RangeSlider(
-        ax=axfreq, 
-        label='Frequency (Hz)',
-        valmin=0.05, 
-        valmax=49.5,
-        valinit=(0.05, 49.5)
-    )
+#     ## Filter 
+#     axfreq = plt.axes([0.25, 0.2, 0.65, 0.03])
+#     freq_slider = RangeSlider(
+#         ax=axfreq, 
+#         label='Frequency (Hz)',
+#         valmin=0.05, 
+#         valmax=49.5,
+#         valinit=(0.05, 49.5)
+#     )
     
-    ## Window for kurtosis
-    axwin = plt.axes([0.25, 0.15, 0.65, 0.03])
-    win_slider = Slider(
-        ax=axwin, 
-        label='Kurtosis : Window shift (s)',
-        valmin=0.02, 
-        valmax=0.05,
-        valinit=win_init, 
-        valstep=0.005
-    )
+#     ## Window for kurtosis
+#     axwin = plt.axes([0.25, 0.15, 0.65, 0.03])
+#     win_slider = Slider(
+#         ax=axwin, 
+#         label='Kurtosis : Window shift (s)',
+#         valmin=0.02, 
+#         valmax=0.05,
+#         valinit=win_init, 
+#         valstep=0.005
+#     )
 
-    ## Trigger on
-    axtrig_on = plt.axes([0.25, 0.1, 0.65, 0.03])
-    trig_slider = RangeSlider(
-        ax=axtrig_on, 
-        label='Threshold (%)',
-        valmin=0, 
-        valmax=1,
-        valinit=(thr_off_init, thr_on_init)
-    )
+#     ## Trigger on
+#     axtrig_on = plt.axes([0.25, 0.1, 0.65, 0.03])
+#     trig_slider = RangeSlider(
+#         ax=axtrig_on, 
+#         label='Threshold (%)',
+#         valmin=0, 
+#         valmax=1,
+#         valinit=(thr_off_init, thr_on_init)
+#     )
 
-    ## Update sliders
-    def update(val):
-        # Filter
-        freqmin_filt = freq_slider.val[0]
-        freqmax_filt = freq_slider.val[1]
+#     ## Update sliders
+#     def update(val):
+#         # Filter
+#         freqmin_filt = freq_slider.val[0]
+#         freqmax_filt = freq_slider.val[1]
         
-        trace_trim_copy = trace.copy()
-        trace_filtered = trace_trim_copy.filter('bandpass', freqmin=freqmin_filt, freqmax=freqmax_filt)
-        trace_line[0].set_ydata(trace_filtered.data) 
+#         trace_trim_copy = trace.copy()
+#         trace_filtered = trace_trim_copy.filter('bandpass', freqmin=freqmin_filt, freqmax=freqmax_filt)
+#         trace_line[0].set_ydata(trace_filtered.data) 
 
-        # Kurtosis
-        new_win = win_slider.val
-        new_kurt_norm = kurtosis_norm(trace_filtered, new_win)
+#         # Kurtosis
+#         new_win = win_slider.val
+#         new_kurt_norm = kurtosis_norm(trace_filtered, new_win)
         
-        new_max_kurtosis = np.max(new_kurt_norm)
+#         new_max_kurtosis = np.max(new_kurt_norm)
         
-        kurto_line[0].set_ydata(new_kurt_norm)
-        new_win_3decim = "{:.3f}".format(new_win)
-        ax2.set_title(f'Kurtosis - Décalage de la fenêtre : {new_win_3decim} secondes')
+#         kurto_line[0].set_ydata(new_kurt_norm)
+#         new_win_3decim = "{:.3f}".format(new_win)
+#         ax2.set_title(f'Kurtosis - Décalage de la fenêtre : {new_win_3decim} secondes')
         
-        # Threshold
-        new_thr_off = trig_slider.val[0]
-        new_thr_on = trig_slider.val[1]
-        thr_off_val = new_thr_off * new_max_kurtosis
-        thr_on_val = new_thr_on * new_max_kurtosis
-        kurt_on2.set_ydata(thr_on_val)
+#         # Threshold
+#         new_thr_off = trig_slider.val[0]
+#         new_thr_on = trig_slider.val[1]
+#         thr_off_val = new_thr_off * new_max_kurtosis
+#         thr_on_val = new_thr_on * new_max_kurtosis
+#         kurt_on2.set_ydata(thr_on_val)
 
-        new_all_starttimes = starttimes_trigger_by_kurtosis(new_kurt_norm, new_thr_on, new_thr_off)
+#         new_all_starttimes = starttimes_trigger_by_kurtosis(new_kurt_norm, new_thr_on, new_thr_off)
 
-        xvline = new_all_starttimes * trace_filtered.stats.delta
-        delta = trace_filtered.stats.delta
-        seg_new = [np.array([[x*delta, ymin2], [x*delta, ymax2]]) for x in new_all_starttimes] 
-        vline.set_segments(seg_new)
+#         xvline = new_all_starttimes * trace_filtered.stats.delta
+#         delta = trace_filtered.stats.delta
+#         seg_new = [np.array([[x*delta, ymin2], [x*delta, ymax2]]) for x in new_all_starttimes] 
+#         vline.set_segments(seg_new)
         
-        plt.draw()
+#         plt.draw()
     
-    freq_slider.on_changed(update)
-    win_slider.on_changed(update)
-    trig_slider.on_changed(update)
+#     freq_slider.on_changed(update)
+#     win_slider.on_changed(update)
+#     trig_slider.on_changed(update)
 
-    plt.subplots_adjust(bottom=0.28, wspace=0.4, hspace=0.4)
-    plt.show()
+#     plt.subplots_adjust(bottom=0.28, wspace=0.4, hspace=0.4)
+#     plt.show()
 
 
 
@@ -421,3 +421,82 @@ def kurt_param_sliders_per_trace(trace, start_global:UTCDateTime, kurt_norm,
 #     ]
 
 # # captures_per_event_spectogramms(folder_path, folder_out_per_event_spectograms, all_seismogram, networks_stations)
+
+
+
+def demo_con_style(ax, connectionstyle):
+    x1, y1 = 0.3, 0.2
+    x2, y2 = 0.8, 0.6
+
+    # ax.plot([x1, x2], [y1, y2], ".")
+    ax.annotate("",
+                xy=(x1, y1), xycoords='data',
+                xytext=(x2, y2), textcoords='data',
+                )
+
+    ax.text(.05, .95, connectionstyle.replace(",", ",\n"),
+            transform=ax.transAxes, ha="left", va="top")
+
+def hist_band_freq(fmin:float, fc:float, save_fig_path:str=None, show:bool=True):
+    """
+    Produces two histograms showing the repartition of minmum frequencies and central frequencies
+    determined by spectograms Stockwell method on seismograms from 01/02/2020 to 11/02/2020
+    and plots values of fmin et fc choosen on these histograms.
+
+    Args :
+        fmin : Minimum frequency choosen for the 'freqmin' of bandpass filtering
+        fc : Central frequency choosen for the 'freqmax' of bandpass filtering
+        save_fig_path : Save path directory (Default None means no save)
+    
+    Returns :
+        Histograms (can be save into the given save path)
+    
+    """
+    
+
+    fig = plt.figure('Histogrammes')
+    title = (
+        f"Répartition des fréquences minimums et centrales \n"
+        f"sur les trains d\'ondes d\'éboulements déterminées par la méthode de Stockwell \n"
+        f"(01/02/2020 - 11/02/2020)"
+    )
+    fig.suptitle(title)
+
+    ax1 = plt.subplot(121)
+    ax1.hist(all_fmin, alpha=0.5)
+    ax1.set_title('Répartition des fréquences minimums')
+    ax1.set_xlabel('Fréquence (Hz)')
+    ax1.set_ylabel('Nombre')
+    ax1.axvline(fmin, color='darkred')
+    ymin1, ymax1 = ax1.get_ylim()
+    fmin_format = float(format(fmin, '.2f'))
+    ax1.annotate(
+        f"{fmin_format}", 
+        xy=(fmin, 0), 
+        xytext=(fmin-0.15, ymax1-4), 
+        color='darkred'
+        )
+    ax1.grid(True)
+
+    ax2 = plt.subplot(122)
+    ax2.hist(all_central_frq, alpha=0.5)
+    ax2.set_title('Répartition des fréquences centrales')
+    ax2.set_xlabel('Fréquence (Hz)')
+    ax2.axvline(fc, color='darkred')
+    ymin2, ymax2 = ax2.get_ylim()
+    fc_format = float(format(fc, '.2f'))
+    ax2.annotate(
+        f"{fc_format}", 
+        xy=(fc, 0),
+        xytext=(fc-1, ymax2-5), 
+        color='darkred'
+        )
+    ax2.grid(True)
+
+    if show == True :
+        plt.show()
+
+    if save_fig_path is not None:
+        histname = 'hist_fmin_fc_01-02-2020_11-02-2020.png'
+        hist_path = os.path.join(save_fig_path, histname)
+        fig.savefig(hist_path)
