@@ -1,23 +1,25 @@
 """ Module for sta-lta method on seismograms to detect start and end times of trainwaves """
 
 import os
-import json
 
 import numpy as np
 
 from tqdm import tqdm
+from typing import List
+
 from obspy.core import Stream, read
 from obspy.signal.trigger import coincidence_trigger
 from obspy import UTCDateTime
 
-
-from locevdet.utils import get_period, clean_utc_str, get_starttime_trainwave
+from locevdet.utils import get_info_from_mseedname, clean_utc_str, get_starttime_trainwave
+from locevdet.event import Event
+from locevdet.stations import STATIONS_NETWORKS
 
 def stalta_per_event_coincidence_trigger(folder_in:str,
         freqmin:int, freqmax:int,
         nsta_time:int, nlta_time:int, thr_on:float, thr_off:float,
         trigger_type:str="classicstalta", thr_coincidence_sum:int=1,
-        save_path:str=None, format_save:str='JSON', override:bool=False):
+        save_path:str=None, format_save:str='JSON', override:bool=False, sampling_rate=100):
     """
     Save dictionaries for each trainwaves detected
     containing global start time and order of station's arrivals.
@@ -47,63 +49,68 @@ def stalta_per_event_coincidence_trigger(folder_in:str,
         filename for filename in os.listdir(folder_in)
     ]
 
-    # List all periods of events
-    period_filename = get_period(all_seismogram)
+    # List all perioformat = os.ds of events
+    period_filename = list(set(get_info_from_mseedname(filename, 'periodtime') 
+        for filename in all_seismogram))
 
     if save_path is None:
         save_path = os.getcwd()
     save_path_format = os.path.join(save_path, format_save)
     os.makedirs(save_path_format, exist_ok=True)
 
-    # The loop
+    event_list = []
+
     for period_name in tqdm(period_filename):
         stream = Stream()
+        for mseed_name in all_seismogram:
+            build_period_stream(period_name, folder_in, mseed_name,
+                stream, filter_band=(freqmin, freqmax), sampling_rate=sampling_rate)
 
-        for filename in all_seismogram :
-            if period_name == '_'.join([filename.split('_')[2],filename.split('_')[3]]) :
-
-                filepath = os.path.join(folder_in, filename)
-                seismogram = read(filepath)
-
-                for _,seismo in enumerate(seismogram):
-                    if seismo.stats.component == 'Z':
-                        trace = seismo
-
-                #Filter Band-pass
-                trace.filter('bandpass', freqmin=freqmin, freqmax=freqmax)
-
-                stream += trace
-
-        nsta = int(nsta_time*trace.stats.sampling_rate)
-        nlta = int(nlta_time*trace.stats.sampling_rate)
-
-        trig = coincidence_trigger(trigger_type, thr_on, thr_off, stream=stream,
+        # Event detection with STA-LTA
+        nsta = int(nsta_time * sampling_rate)
+        nlta = int(nlta_time * sampling_rate)
+        triggered_events = coincidence_trigger(trigger_type, thr_on, thr_off, stream=stream,
             thr_coincidence_sum=thr_coincidence_sum, nsta=nsta, nlta=nlta)
 
-        for i,_ in enumerate(trig): # Event i in the number of global detected trainwaves
-            starttime_global = UTCDateTime(trig[i]['time'])
+        stream_stations = [trace.stats.station for trace in stream]
+        # Add every single event in this period
+        for triggered_event in triggered_events:
+            start_global = UTCDateTime(triggered_event['time'])
 
-            trainwave = {
-                "starttime_global" : str(starttime_global),
-                "order_arrivals_detected" : trig[i]['stations']
-            }
-
-            trainwave_filename = '_'.join((
-                'trainwave',
-                clean_utc_str(starttime_global)
-            ))
-
+            traces = [
+                stream[stream_stations.index(station)]
+                for station in triggered_event['stations']
+            ]
+            stations = [
+                STATIONS_NETWORKS[trace.stats.network][trace.stats.station]
+                for trace in traces
+            ]
+            event = Event(
+                start_global=start_global,
+                stations=stations
+            )
+            event.add_trainwaves(stream)
+            trainwave_filename = '_'.join(('trainwave', clean_utc_str(start_global)))
             trainwave_filepath = os.path.join(save_path_format, trainwave_filename)
-
-            # Save in the given format
-            if override or not os.path.isfile(save_path_format):
-                if format_save == 'JSON':
-                    with open(trainwave_filepath, 'w') as content:
-                        json.dump(trainwave, content,  indent=1)
-
-
+            event.save(trainwave_filepath, format_save="JSON", override=override)
+            event_list.append(event)
+    
+    event_list.save(trainwave_filepath)
     number_trainwaves = len(os.listdir(save_path_format))
-    return(print(f"{number_trainwaves} dictionnaires ont été importés"))
+    return number_trainwaves
+
+
+def build_period_stream(period_name, folder_in, mseed_name, stream, filter_band, sampling_rate):
+    if period_name == get_info_from_mseedname(mseed_name, 'periodtime'):
+        filepath = os.path.join(folder_in, mseed_name)
+        seismogram = read(filepath)
+        for _,seismo in enumerate(seismogram):
+            if seismo.stats.component == 'Z':
+                trace = seismo
+                if trace.stats.sampling_rate != sampling_rate:
+                    return
+        trace.filter('bandpass', freqmin=filter_band[0], freqmax=filter_band[1])
+        stream += trace
 
 def trainwaves_too_close_remove(folder_dict:str, intervall_time:float=0):
     """
@@ -115,8 +122,8 @@ def trainwaves_too_close_remove(folder_dict:str, intervall_time:float=0):
         intervall_time: TODO
 
     Returns:
-        Delete duplicate trainwaves
-        and returns the number and names of deleted files
+        List of dictionaries of deleted files
+
     """
     dict_path = os.listdir(folder_dict)
     dict_removed=[]
@@ -136,16 +143,30 @@ def trainwaves_too_close_remove(folder_dict:str, intervall_time:float=0):
                 dict_path.remove(dictionary)
 
                 dict_removed.append(dictionary)
-    return(print(f"{len(dict_removed)} dictionnaires ont été supprimés, dont : {dict_removed}"))
+    return dict_removed
 
-def false_trainwaves(seismograms_path:str, trainwaves_path:str, nlta_time:int, time_offset:int):
-    """ TODO  """
+
+def false_trainwaves(seismograms_path:str,trainwaves_path:str, 
+    nlta_time:int, time_offset:int)-> List[str]:
+    
+    """ Delete false start time detected by STA-LTA during the LTA time-window for each seismogram 
+    
+    Args:
+        seismograms_path: Directory path of MSEEDS seismograms
+        trainwaves_path : Directory path of trainwaves dictionaries
+        nlta_time : Time length of the LTA rolling window
+        time_offset: Offset in seconds added to the nlta_time 
+            to be certain to count false trainwaves closed to this period nlta.
+
+    Returns:
+        List of removed false trainwaves dictionaries
+    """
 
     all_seismogram = [
         filename for filename in os.listdir(seismograms_path)
     ]
 
-    periods = get_period(all_seismogram)
+    periods = list(set(get_info_from_mseedname(filename, 'periodtime') for filename in all_seismogram))
 
     all_trainwaves = [
         trainwave_name for trainwave_name in os.listdir(trainwaves_path)
@@ -161,4 +182,4 @@ def false_trainwaves(seismograms_path:str, trainwaves_path:str, nlta_time:int, t
                 os.remove(os.path.join(trainwaves_path, trainwave_name))
                 all_trainwaves.remove(trainwave_name)
                 dict_removed.append(trainwave_name)
-    return(print(f"{len(dict_removed)} dictionnaires ont été supprimés, dont : {dict_removed}"))
+    return dict_removed
