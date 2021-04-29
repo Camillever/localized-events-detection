@@ -8,7 +8,7 @@ from tqdm import tqdm
 from obspy.clients.fdsn import Client
 from obspy import UTCDateTime
 
-from locevdet.utils import clean_utc_str, ref_duration_to_time_window
+from locevdet.utils import clean_utc_str, ref_duration_to_time_window, get_info_from_mseedname
 
 def download_from_stations(client:Client, network:str, stations:List[str],
         events_times:List[Tuple[float]], process_waveforms:Callable=lambda x:x,
@@ -84,6 +84,31 @@ def read_events_times_from_csv(csv_events_path:str, csv_delimiter:str=';',
         )
         events_times.append(time_window)
     return events_times
+
+def get_events_times_from_some_mseeds(mseeds_path:str)-> List[Tuple[float]]:
+    """
+    Extracts period time from some mseeds already download
+    and returns the start and end time of window
+
+    Args:
+        mseeds_path: Dictionary path of theses mseeds seismograms
+
+    Returns:
+        List of (start, end) times in UTCDateTime per events extracted from the catalog
+
+    """
+    mseeds = os.listdir(mseeds_path)
+    periods = list(set(get_info_from_mseedname(filename, 'periodtime')
+        for filename in mseeds))
+    events_times = []
+    for period in periods :
+        starttime = UTCDateTime(period.split('_')[0])
+        endtime = UTCDateTime(period.split('_')[1])
+        time_window = (starttime, endtime)
+        events_times.append(time_window)
+    return events_times
+
+
 
 if __name__ == "__main__":
     pass
