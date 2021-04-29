@@ -1,4 +1,5 @@
-""" To apply STA-LTA"""
+""" Application of STA-LTA : 
+    Determination of global start of trainwaves triggered by simultaned stations """
 
 import os
 
@@ -21,20 +22,25 @@ config = {
     "thr_on": 2.9,
     "thr_off": 1,
     "thr_coincidence_sum": 2,
+    "override":True
 }
 
-stalta_per_event_coincidence_trigger(
+number_trainwaves = stalta_per_event_coincidence_trigger(
     folder_in=mseeds_path,
     save_path=sta_lta_save_path,
     **config
 )
+print(f"{number_trainwaves} dictionnaires ont été importés")
 
 # To remove useless trainwaves, too close of each others
 json_sta_lta_save_path = os.path.join(sta_lta_save_path, "JSON")
 INTERVALL = 2 # in seconds
 
-trainwaves_too_close_remove(json_sta_lta_save_path, INTERVALL)
+dict_removed = trainwaves_too_close_remove(json_sta_lta_save_path, INTERVALL)
+print(f"{len(dict_removed)} dictionnaires ont été supprimés, dont : {dict_removed}")
 
 # To remove false trainwaves
 OFFSET = 2 # in seconds
-false_trainwaves(mseeds_path, json_sta_lta_save_path, config["nlta_time"], time_offset=OFFSET)
+dict_removed = false_trainwaves(mseeds_path,
+    json_sta_lta_save_path, config["nlta_time"], time_offset=OFFSET)
+print(f"{len(dict_removed)} dictionnaires ont été supprimés, dont : {dict_removed}")

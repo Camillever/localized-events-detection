@@ -20,9 +20,10 @@ from obspy.core import read, Stream
 from obspy.realtime.signal import kurtosis
 from obspy.signal.trigger import trigger_onset
 
-from locevdet.utils import get_starttime_trainwave, get_period, clean_utc_str
+from locevdet.utils import get_starttime_trainwave, get_info_from_mseedname, clean_utc_str
 from locevdet.waveform_processing import trim_trace
-from locevdet.trainwaves_arrivals.hilbert import envelope_by_hilbert
+from locevdet.trainwaves_arrivals.hilbert import envelope_by_hilbert, get_max_envelope
+from locevdet.visualisation.plots import demo_con_style
 
 # Utils 
 
@@ -134,9 +135,9 @@ def kurtosistest_for_all_seismograms(seismograms_path:str, trainwaves_path:str,
             st = Stream()
 
             for filename in all_seismogram_reduced:
-                period = get_period([filename])
-                seismo_start = UTCDateTime(period[0].split('_')[0])
-                seismo_end = UTCDateTime(period[0].split('_')[1])
+                period = get_info_from_mseedname(filename, 'periodtime')
+                seismo_start = UTCDateTime(get_info_from_mseedname(filename, 'starttime'))
+                seismo_end = UTCDateTime(get_info_from_mseedname(filename, 'endtime'))
 
                 for station in lists_stations:
                     if start_global > seismo_start +100 and start_global < seismo_end-25 and filename.split('_')[1] == station:
@@ -151,7 +152,6 @@ def kurtosistest_for_all_seismograms(seismograms_path:str, trainwaves_path:str,
                                 trace = seismo
                         st += trace
                         trace_trim = trim_trace(trace, start_global, pre_trigger, post_trigger)
-                        print(trace_trim.stats.npts)
                         
                         # Kurtosis
                         kurt_norm = kurtosis_panda(trace_trim, win)
@@ -289,6 +289,13 @@ def kurtosistest_for_all_seismograms(seismograms_path:str, trainwaves_path:str,
                     print('Done')
 
 ###############################################################################################
+# def kurtosis_starts_extraction_rewritten():
+"""
+Args:
+    
+
+"""
+
 
 def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str, 
     pre_trigger:float, post_trigger:float,
@@ -306,8 +313,8 @@ def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str,
     filenames = []
     all_seismogram_reduced = []
     for filename in all_seismogram:
-        starttime = UTCDateTime(filename.split('_')[2])
-        station = filename.split('_')[1]
+        starttime = UTCDateTime(get_info_from_mseedname(filename, 'starttime'))
+        station = get_info_from_mseedname(filename, 'station')
         if filename.startswith('PF_NSR') and starttime < UTCDateTime("2020-02-07T10:32:10"):
             filenames.append(filename)
         else:
@@ -335,11 +342,6 @@ def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str,
             lists_stations = trainwave_data['order_arrivals_detected'].copy()
             print('before :',lists_stations)
 
-            # Copy
-            import copy
-            new_trainwave = copy.deepcopy(trainwave_data)
-            print(new_trainwave)
-
             lists_stations_reduced =[]
             station_removed = []
             for station in lists_stations:
@@ -364,9 +366,9 @@ def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str,
             st = Stream()
 
             for filename in all_seismogram_reduced:
-                period = get_period([filename])
-                seismo_start = UTCDateTime(period[0].split('_')[0])
-                seismo_end = UTCDateTime(period[0].split('_')[1])
+                period = get_info_from_mseedname(filename, 'periodtime')
+                seismo_start = UTCDateTime(period.split('_')[0])
+                seismo_end = UTCDateTime(period.split('_')[1])
                 file_station = filename.split('_')[1]
 
                 for station in lists_stations_reduced:
@@ -386,22 +388,39 @@ def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str,
                                 
                         
                         trace_trim = trim_trace(trace, start_global, pre_trigger, post_trigger)
-                        trace_filtered = trace_trim.filter('bandpass', freqmin=freqmin, freqmax=freqmax)
+                        trace_trim_copy = trace_trim.copy()
+                        trace_filtered = trace_trim_copy.filter('bandpass', freqmin=freqmin, freqmax=freqmax)
 
-                        # Hilbert
+                        # Hilbert and Signal/Noise
 
-                        envelope, _ = envelope_by_hilbert(trace_filtered.data)
-                        
+                        envelope = envelope_by_hilbert(trace_filtered.data)
+                        envelope_max = get_max_envelope(trace_filtered.data)
+
+
+                        ## Remove 5% of envelope data because precaution on borders
+                        # borders_length = int(5/100 * len(envelope))
+                        # print(borders_length)
+                        # envelope_without_borders = envelope[borders_length : -borders_length]
+                        # snr = float(format(SNR(envelope_without_borders), '.3f'))
+
                         # Kurtosis
                         kurt_norm = kurtosis_panda(trace_filtered, win)
                         if len(kurt_norm) != 0:
                             st += trace
                             thr_off = 0.25           
                             all_starttimes = starttimes_trigger_by_kurtosis(kurt_norm, thr_on, thr_off)
-                            print(all_starttimes)
 
-                            start_name_trace = clean_utc_str(trace.stats.starttime)
-                            end_name_trace = clean_utc_str(trace.stats.endtime)
+                            all_starttimes_delta = all_starttimes*trace_filtered.stats.delta
+                            print("trace starts :", trace_filtered.stats.starttime)
+
+                            all_starttimes_from_start = []
+                            for starts in all_starttimes_delta:
+                                all_starttimes_from_start.append(str(trace_filtered.stats.starttime + starts))
+                                print(all_starttimes_from_start)
+
+
+                            start_name_trace = clean_utc_str(trace_filtered.stats.starttime)
+                            end_name_trace = clean_utc_str(trace_filtered.stats.endtime)
 
                             max_kurtosis = np.max(kurt_norm)
 
@@ -424,9 +443,13 @@ def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str,
                             ## SUBPLOT SEISMOGRAM ##
                             ax[numero] = fig.add_subplot(2,nb_stations, numero+1)
                             ax[numero].set_title(f'{trace_filtered.stats.station}', fontsize=15, fontweight='bold')
-                            ax[numero].plot(trace_filtered.times(), trace_trim.data, color='grey', linewidth=1.2)
-                            ax[numero].plot(trace_filtered.times(), envelope, color='orange', linewidth=2)
-                            line[numero] = ax[numero].plot(trace_filtered.times(), trace_filtered.data, linewidth=1.2)
+                            sismo_non_filt = ax[numero].plot(trace_filtered.times(), trace_trim.data, color='lightgrey', linewidth=1.1)
+                            env = ax[numero].plot(trace_filtered.times(), envelope, color='darkorange', linewidth=2)
+                            env_max = ax[numero].plot(trace_filtered.times(), envelope_max, color='gold', linewidth=2)
+
+                            line[numero] = ax[numero].plot(trace_filtered.times(), trace_filtered.data, color='darkslategrey', linewidth=1.2)
+
+                            # demo_con_style(ax[numero], f"SNR : {snr},(sur 90% de l'enveloppe ci-dessous)")
                             
                             # Start global of trainwave
                             ymin1, ymax1 = ax[numero].get_ylim()
@@ -446,7 +469,7 @@ def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str,
                             start_global_line2 = ax[nb_stations + numero].axvline(pre_trigger, 0, 1, color='darkgreen', linewidth=3)
 
                             # Kurtosis threshold and start times triggered
-                            all_starttimes_delta = all_starttimes*trace_filtered.stats.delta
+                            
 
                             vlines[numero] = ax[numero].vlines(all_starttimes_delta, ymin1, ymax1, color='red', linewidth=2.5)
                             vlines[nb_stations + numero] = ax[nb_stations + numero].vlines(all_starttimes_delta, 0, 1, color='red', linewidth=2.5)
@@ -454,11 +477,38 @@ def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str,
                             thr_line[nb_stations + numero] = ax[nb_stations + numero].axhline(thr_on*max_kurtosis, xmin, xmax, color='red',linestyle='--')
             if len(st)!=0:
                 title = f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}\n {freqmin}-{freqmax}Hz / Fenêtre glissante de {win}s / Seuil à {thr_on} %"
-                fig.suptitle(title, fontsize=20)
+                fig.suptitle(title, fontsize=18)
                 print(f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}")
-                # fig.subplots_adjust(bottom=0.28, wspace=0.4, hspace=0.4)
-                labels = ['Début global du train d\'onde détecté par STA-LTA', 'Débuts potentiels du train d\'onde détectés par Kurtosis']
-                fig.legend([start_global_line2, vlines[0]], labels, loc='upper right', fontsize=11)
+                fig.subplots_adjust(top=5)
+
+                handles = [
+                    line[0][0], 
+                    sismo_non_filt[0], 
+                    line[nb_stations][0], 
+                    start_global_line2, 
+                    vlines[0], 
+                    env[0], 
+                    env_max[0]
+                    ]
+
+                labels = [
+                    'Sismogramme filtré',
+                    'Sismogramme non filtré',
+                    'Kurtosis',  
+                    'Début global du train d\'onde détecté par STA-LTA', 
+                    'Débuts potentiels du train d\'onde détectés par Kurtosis', 
+                    'Enveloppe Hilbert par Scipy', 
+                    'Enveloppe par maximum glissant sur l\'enveloppe de Hilbert'
+                    ]
+                fig.legend(
+                    handles, 
+                    labels, 
+                    loc='upper right', 
+                    fontsize=10, 
+                    fancybox=True, 
+                    shadow=True, 
+                    bbox_to_anchor=(1.1, 1.1)
+                    )
                 plt.tight_layout()
                 # plt.show()
 
@@ -476,9 +526,3 @@ def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str,
                 #         json.dump(new_trainwave, content,  indent=1)
 
                          
-
-
-
-
-
-
