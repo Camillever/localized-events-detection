@@ -2,7 +2,7 @@
 
 import os
 
-from typing import List
+from typing import List, Tuple
 
 import numpy as np
 
@@ -16,7 +16,8 @@ from locevdet.utils import get_info_from_mseedname
 from locevdet.event import Event, EventList
 from locevdet.stations import STATIONS_NETWORKS
 
-def stalta_detect_events(folder_in:str, freqmin:int, freqmax:int,
+def stalta_detect_events(folder_in:str, all_seismogram:List[str],
+        freqmin:int, freqmax:int,
         nsta_time:int, nlta_time:int, thr_on:float, thr_off:float,
         trigger_type:str="classicstalta", thr_coincidence_sum:int=1,
         sampling_rate=100) -> EventList:
@@ -32,22 +33,16 @@ def stalta_detect_events(folder_in:str, freqmin:int, freqmax:int,
         save_path: directory path to save the dictionnaries
         freqmin: Minimum frequency for the bandpass filter
         freqmax: Maximum frequency for the bandpass filter
-        trigger_type:
-        nsta_time:
-        nlta_time :
+        trigger_type: TODO
+        nsta_time: TODO
+        nlta_time : TODO
         thr_on : threshold for switching trigger on
         thr_off: threshold for switching trigger off
 
     Returns :
-        Save in the choosen format the dictionary 'trainwave'.
-        'trainwave' dictionary contains:
-                            - The global start time of the trainwave
-                            - The order of stations which have detected first arrivals
+        Class 'EventList' which compile all events detected by stations
     """
     # Compile the names of all seismograms
-    all_seismogram = [
-        filename for filename in os.listdir(folder_in)
-    ]
 
     period_filename = list(set(get_info_from_mseedname(filename, 'periodtime')
         for filename in all_seismogram))
@@ -88,7 +83,23 @@ def stalta_detect_events(folder_in:str, freqmin:int, freqmax:int,
     return event_list
 
 
-def build_period_stream(period_name, folder_in, mseed_name, stream, filter_band, sampling_rate):
+def build_period_stream(period_name:str, folder_in:str, mseed_name:str, 
+        stream:Stream, filter_band:Tuple[float], sampling_rate:float):
+    """
+    Add traces (vertical component) in the stream for a given period time
+
+    Args:
+        period_name : String of the start and end time of traces in the stream with
+        folder_in : Directory path of the folder containing every Mseed seismograms
+        mseed_name : Name of the Mseed file
+        stream : Stream containing each trace 
+        filter_band : [frequency minimum, frequency maximum], in Hertz, of the bandpass filter
+        sampling_rate : Sampling rate of all trace in the stream (in Hertz)
+
+    Returns:
+        Modify the stream (by adding the traces for the given period time)
+    
+    """
     if period_name == get_info_from_mseedname(mseed_name, 'periodtime'):
         filepath = os.path.join(folder_in, mseed_name)
         seismogram = read(filepath)
@@ -102,15 +113,15 @@ def build_period_stream(period_name, folder_in, mseed_name, stream, filter_band,
 
 def remove_too_close_trainwaves(event_list:EventList, minimum_time:float=0)-> List[str]:
     """
-    Delete trainwaves dictionaries too close of each others in the given intervall time
-    (Each supplement trainwave is considered as a duplicate)
+    Delete events too closed of each others ( with the minimum time)
 
     Args:
-        event_list: TODO
-        minimum_time: TODO
+        event_list: Class which is the list of the class Event (compil each event detected)
+                    See locevdet.event python file
+        minimum_time: Minimum time where two trainwaves are considered close enough (in seconds)
 
     Returns:
-        List of dictionaries of deleted files
+        List of all event (class) which have been removed
 
     """
     events_removed = []
@@ -128,13 +139,17 @@ def remove_border_stalta_false_trainwaves(event_list:EventList, nlta_time:int,
         uncertainty_ratio:float=0.05)-> List[str]:
     
     """ TODO
+    Class 'EventList' which compile all events detected by stations, is modified : 
+        without false trainwaves
 
     Args:
-        event_list : TODO
+        event_list : Class which is the list of the class Event (compil each event detected)
+                    See locevdet.event python file
         nlta_time : Time length of the LTA rolling window
+        uncertainty_ratio : TODO
 
     Returns:
-        TODO
+        List of all event (class) which have been removed
     """
     events_removed = []
 

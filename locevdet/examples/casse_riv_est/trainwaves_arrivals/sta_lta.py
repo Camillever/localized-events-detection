@@ -3,12 +3,14 @@
 
 import os
 
+
 from locevdet.trainwaves_arrivals.sta_lta import stalta_detect_events
 from locevdet.trainwaves_arrivals.sta_lta import remove_too_close_trainwaves
 from locevdet.trainwaves_arrivals.sta_lta import remove_border_stalta_false_trainwaves
+from locevdet.examples.casse_riv_est.all_seismo import list_seismograms
 
 #Paths
-mseeds_path = os.path.join("mseeds", "RESIF")
+mseeds_path = os.path.join("mseed_RESIF", "seismograms_all_stations_average_and_strong")
 sta_lta_save_path = os.path.join("sta_lta")
 
 config = {
@@ -24,8 +26,12 @@ config = {
     "thr_coincidence_sum": 2,
 }
 
+
+all_seismogram_reduced = list_seismograms(mseeds_path)
+
 event_list = stalta_detect_events(
     folder_in=mseeds_path,
+    all_seismogram=all_seismogram_reduced,
     **config
 )
 print(f"Events ({len(event_list)}): {event_list}")
