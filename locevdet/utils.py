@@ -1,8 +1,37 @@
 """ Module for utilities functions """
-
+import os
+import numpy as np
+import pandas as pd
 from typing import Tuple, List
 from obspy import UTCDateTime
-from mat4py import loadmat
+
+
+
+def kurtosis_panda(trace, win_kurt_init):
+    """ Apply recursive kurtosis calculation on the given trace and returns a normalized kurtosis matrix.
+    (See : https://pandas.pydata.org/pandas-docs/version/0.25.3/reference/api/pandas.core.window.Rolling.kurt.html )
+
+    Args:
+        trace : Trace object to append to this RtTrace
+        win_kurt_init : window length in seconds for the kurtosis (shift length ?)
+
+    Returns:
+        Normalized npdarray of the kurtosis matrix (trace divised by the max of the trace).    
+    """
+
+    data_pd = pd.Series(trace.data)
+    kurt = data_pd.rolling(win_kurt_init).kurt()
+
+    # Conversion to numpy array and remove 'Nan'
+    kurt_np = kurt.to_numpy()
+    kurt_np = np.nan_to_num(kurt_np)
+
+    # Normalization
+    kurt_max = np.max(kurt_np)
+    kurt_norm = []
+    if kurt_max != 0:
+        kurt_norm = kurt_np/ kurt_max   
+    return kurt_norm
 
 def clean_utc_str(utc_datetime:UTCDateTime) -> str:
     """
@@ -46,7 +75,7 @@ def get_info_from_mseedname(filename:str, info_type:str)-> str:
     Args:
         filename : Name of the mseed file
             with the nomenclature : '{network}_{station}_{starttime}_{endtime}'
-        info_type : String of type of info 
+        info_type : String of type of information 
             Possibility of values :
                 - 'network'
                 - 'station'
@@ -82,125 +111,88 @@ def get_starttime_trainwave(filename_trainwave:str):
     """
     return filename_trainwave.split('_')[-1]
 
+def rooling_max(signal, win_lenght=None):
+    if win_lenght is None:
+        win_lenght = len(signal) // 20
 
-def freq_band_interest(matlab_folder_path:str, save_fig_path:str=None):
+    max_signal = -np.inf * np.ones_like(signal)
+    for i in range(len(signal)):
+        if len(signal) - i < win_lenght:
+            max_signal[i] = np.max(signal[i:])
+        else:
+            max_signal[i] = np.max(signal[i:i+win_lenght])
+
+    return max_signal
+
+
+
+
+from locevdet.event import *
+from locevdet.visualisation.plots import hist_band_freq
+
+def freq_band_interest(eventlist:EventList, save_fig_path:str=None, show:bool=True):
     """ TODO
 
 
     """
-    import os
-    import numpy as np
-    from mat4py import loadmat
 
-    files = [
-        f for f in os.listdir(matlab_folder_path)
-        if f.endswith('.mat')
-    ]
     all_central_frq = []
     all_fmin = []
-    for file in files:
-        file_path = os.path.join(matlab_folder_path, file)
-        mat = loadmat(file_path)
 
-        # Compile all values of fmin and fc
-        central_frq = mat['wavetrains']['frwidth']
-        fmin = mat['fmin']
-        
-        all_fmin.append(fmin)
-        for fq in central_frq:
-            all_central_frq.append(fq)
+    for event in eventlist:
+        for _, trainwave in event.trainwaves.items():
+            if trainwave.matlab_data is not None : 
+                all_fmin.append(trainwave.matlab_data['trainwave']['fmin'])
+                all_central_frq.append(trainwave.matlab_data['trainwave']['centralfrequency'])
 
-    # Calculation
     mean_fmin = np.mean(all_fmin)
     fc = np.max(all_central_frq)
 
     # Histograms
-    hist_band_freq(fmin=mean_fmin, fc=fc, save_fig_path=save_fig_path, show=False)
-    
+    if save_fig_path is not None or show is True:
+        hist_band_freq(
+            all_fmin, 
+            all_central_frq, 
+            fmin=mean_fmin, 
+            fc=fc, 
+            save_fig_path=save_fig_path, 
+            show=show)
+        
     return float(format(mean_fmin, '.2f')), float(format(fc, '.2f'))
 
-def ti_matlab_results(matlab_folder_path, filename_matlab:str):
-    """
-    TODO
-    """
-    import os
-    
-
-    file_path = os.path.join(matlab_folder_path, filename_matlab)
-    mat = loadmat(file_path)
-
-    ti = mat['wavetrains']['ti'][0]
-    return 
-
-# def get_info_from_matfile(filepath:str, 
-#         info_type:str=''):
+# def ti_to_utcdatetime(filename_matlab:str, ti:float):
 #     """
-#     Extracts the given information from the matlab file.
+#     Conversion of trainwave start in seconds to UTCDateTime
 
 #     Args:
-#         info_type : Type of information extracted
-#             - 'fmin' : Minimum frequency considered for all wavetrains 
-#             - 'total_disp_time' : Total displacement time history
-#             - 'duration' :
-#             - 'radial' :
-#             - 'azimuth' :
-#             - 'Vert_comp' :
-#             - 'North_comp' :
-#             - 'East_comp' :
-#             - 'correl_coeff' :
-#             - 'time_central' :
-#             - 'amplitude' :
-#             - 'amplification' :
-#             - 'frwidth' : Frequency width of wavetrain
-#             - 'Time_vec' : Time vector of wavetrain
-#             - 'ti' : Initial time of wavetrain 
+#         filename_matlab : matlab file name 
+#             with nomenclature 'Ret_{network}_{station}_{starttime}_{endtime}'
+#         ti : Start of the wave train in seconds refered from the start of the seismogram (filename)
 
+#     Returns :
+#         ti_utc_datetime : Start of the wave train in UTCDateTime
 #     """
-#     mat = loadmat(filepath)
+#     starttime = UTCDateTime(get_info_from_matname(filename_matlab)['starttime'])
+#     ti_utc_datetime = starttime + ti
 
+#     return ti_utc_datetime
 
-def ti_to_utcdatetime(filename_matlab:str, ti:float):
-    """
-    Conversion of trainwave start in seconds to UTCDateTime
+# def similarity_ti(matlab_folder_path:str, mseeds_path:str, stations:list):
+#     """TODO
+#     """
+#     all_data_mat = [ 
+#         mat for mat in os.listdir(matlab_folder_path)
+#         if mat.endswith('.mat')
+#         ]
+ 
+#     all_seismogram = os.listdir(mseeds_path)
+#     all_ti_from_mat = []
 
-    Args:
-        filename_matlab : matlab file name 
-            with nomenclature 'Ret_{network}_{station}_{starttime}_{endtime}'
-        ti : Start of the wave train in seconds refered from the start of the seismogram (filename)
+#     for matname in all_data_mat:
+#         print(matname)
+#         ti = ti_matlab_results(matlab_folder_path, matname)
+#         print("ti :", ti)
+#         ti_utc_datetime = ti_to_utcdatetime(matname, ti)
+#         all_ti_from_mat.append(ti_utc_datetime)
+#     return all_ti_from_mat
 
-    Returns :
-        ti_utc_datetime : Start of the wave train in UTCDateTime
-    """
-    starttime = UTCDateTime(get_info_from_matname(filename_matlab, 'starttime'))
-    ti_utc_datetime = starttime + ti
-
-    return ti_utc_datetime
-
-def get_info_from_matname(filename_mat:str, info_type:str='starttime')-> str:
-    """
-    Args:
-        filename_mat : Name of the matlab file 
-            with the nomenclature : 'Ret_{network}_{station}_{starttime}_{endtime}.mat'
-        info_type : String of type of info 
-            Possibility of values :
-                - 'network'
-                - 'station'
-                - 'starttime' (of the mseed signal)
-                - 'endtime' (of the mseed signal)
-                - 'periodtime' ('starttime_endtime' of the mseed signal)
-    Returns:
-        The given type info (string)
-    """
-    if info_type == 'network':
-        return str(filename_mat.split('_')[1])
-    elif info_type == 'station':
-        return str(filename_mat.split('_')[2])
-    elif info_type == 'starttime':
-        return str(filename_mat.split('_')[3])
-    elif info_type == 'endtime':
-        endtime = filename_mat.split('_')[4]
-        return str(endtime.split('.')[0])  # To remove '.mat'
-    elif info_type == 'periodtime':
-        starttime = get_info_from_matname(filename_mat, 'starttime')
-        endtime = get_info_from_matname(filename_mat, 'endtime')
-        return "_".join((starttime, endtime))
