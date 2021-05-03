@@ -70,7 +70,7 @@ save_path_renew = os.path.join('mseed_RESIF', 'seismograms_all_stations_average_
 download_from_stations(
     CLIENT,
     network="PF",
-    stations=["FRE", "HIM", "TTR", "PER"],
+    stations=["FRE", "HIM", "TTR", "PER", "NSR"],
     events_times=events_times,
     save_path=save_path_renew,
     process_waveforms=my_process_waveforms
