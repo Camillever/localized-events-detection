@@ -19,6 +19,7 @@ from locevdet.stations import STATIONS_NETWORKS
 def stalta_detect_events(folder_in:str, all_seismogram:List[str],
         freqmin:int, freqmax:int,
         nsta_time:int, nlta_time:int, thr_on:float, thr_off:float,
+        minimum_time:float, uncertainty_ratio:float=5/100,
         trigger_type:str="classicstalta", thr_coincidence_sum:int=1,
         sampling_rate=100) -> EventList:
     """
@@ -50,24 +51,26 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
 
     event_list = EventList()
     for period_name in tqdm(period_filename):
-        stream = Stream()
+        stream_traces = Stream()
+        stream_traces_filt = Stream()
         for mseed_name in all_seismogram:
             build_period_stream(period_name, folder_in, mseed_name,
-                stream, filter_band=(freqmin, freqmax), sampling_rate=sampling_rate)
-
+                stream_traces, stream_traces_filt, 
+                filter_band=(freqmin, freqmax), sampling_rate=sampling_rate)
+        
         # Event detection with STA-LTA
         nsta = int(nsta_time * sampling_rate)
         nlta = int(nlta_time * sampling_rate)
-        triggered_events = coincidence_trigger(trigger_type, thr_on, thr_off, stream=stream,
+        triggered_events = coincidence_trigger(trigger_type, thr_on, thr_off, stream=stream_traces_filt,
             thr_coincidence_sum=thr_coincidence_sum, nsta=nsta, nlta=nlta)
 
-        stream_stations = [trace.stats.station for trace in stream]
+        stream_stations = [trace.stats.station for trace in stream_traces]
         # Add every single event in this period
         for triggered_event in triggered_events:
             start_global = UTCDateTime(triggered_event['time'])
 
             traces = [
-                stream[stream_stations.index(station)]
+                stream_traces[stream_stations.index(station)]
                 for station in triggered_event['stations']
             ]
 
@@ -77,14 +80,19 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
             ]
 
             event = Event(start_global=start_global, stations=stations)
-            event.add_trainwaves(stream)
+            event.add_trainwaves(stream_traces)
             event_list.append(event)
 
-    return event_list
+    # Remove duplicate and false events from event_list
+    duplicate_ev_removed = remove_too_close_trainwaves(event_list, minimum_time)
+    false_ev_removed = remove_border_stalta_false_trainwaves(event_list, nlta_time, uncertainty_ratio)
+
+    return event_list, duplicate_ev_removed, false_ev_removed
 
 
 def build_period_stream(period_name:str, folder_in:str, mseed_name:str, 
-        stream:Stream, filter_band:Tuple[float], sampling_rate:float):
+        stream_traces:Stream, stream_traces_filt:Stream, 
+        filter_band:Tuple[float], sampling_rate:float):
     """
     Add traces (vertical component) in the stream for a given period time
 
@@ -106,10 +114,11 @@ def build_period_stream(period_name:str, folder_in:str, mseed_name:str,
         for _,seismo in enumerate(seismogram):
             if seismo.stats.component == 'Z':
                 trace = seismo
+                stream_traces += trace
                 if trace.stats.sampling_rate != sampling_rate:
                     return
-        trace.filter('bandpass', freqmin=filter_band[0], freqmax=filter_band[1])
-        stream += trace
+        trace_filt = trace.filter('bandpass', freqmin=filter_band[0], freqmax=filter_band[1])
+        stream_traces_filt += trace_filt
 
 def remove_too_close_trainwaves(event_list:EventList, minimum_time:float=0)-> List[str]:
     """
@@ -129,7 +138,7 @@ def remove_too_close_trainwaves(event_list:EventList, minimum_time:float=0)-> Li
     for event in event_list:
         utc_start = UTCDateTime(event.start_global)
         for other_event in event_list:
-            utc_start_other = UTCDateTime(other_event.start_global)            
+            utc_start_other = UTCDateTime(other_event.start_global)
             if event != other_event and np.abs(utc_start - utc_start_other) <= minimum_time:
                 event_list.remove(other_event)
                 events_removed.append(other_event.start_global)
@@ -137,9 +146,8 @@ def remove_too_close_trainwaves(event_list:EventList, minimum_time:float=0)-> Li
 
 def remove_border_stalta_false_trainwaves(event_list:EventList, nlta_time:int, 
         uncertainty_ratio:float=0.05)-> List[str]:
-    
     """ TODO
-    Class 'EventList' which compile all events detected by stations, is modified : 
+    Class 'EventList' which compile all events detected by stations, is modified :
         without false trainwaves
 
     Args:
