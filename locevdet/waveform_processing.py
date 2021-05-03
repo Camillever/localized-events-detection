@@ -12,6 +12,9 @@ def standard_process_waveforms(waveforms, apodisation, physical_quantity, pre_fi
     return waveforms
 
 def trim_trace(trace, center_value, pre_offset, post_offset):
+
+    """ TODO """
+    
     trace_copy = trace.copy()
     trace_trim = trace_copy.trim(
         center_value - pre_offset,
