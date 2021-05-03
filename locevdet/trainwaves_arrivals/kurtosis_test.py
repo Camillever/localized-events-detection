@@ -22,7 +22,6 @@ from obspy.signal.trigger import trigger_onset
 
 from locevdet.utils import get_starttime_trainwave, get_info_from_mseedname, clean_utc_str
 from locevdet.waveform_processing import trim_trace
-from locevdet.trainwaves_arrivals.hilbert import envelope_by_hilbert, get_max_envelope
 from locevdet.visualisation.plots import demo_con_style
 
 # Utils 
@@ -46,27 +45,23 @@ def kurtosis_panda(trace, win_kurt_init):
     Args:
         trace : Trace object to append to this RtTrace
         win_kurt_init : window length in seconds for the kurtosis (shift length ?)
-    
+
     Returns:
         Normalized npdarray of the kurtosis matrix (trace divised by the max of the trace).    
     """
-    
+
     data_pd = pd.Series(trace.data)
     kurt = data_pd.rolling(win_kurt_init).kurt()
 
-    # Conversion to numpy array and remove 'Nan' 
+    # Conversion to numpy array and remove 'Nan'
     kurt_np = kurt.to_numpy()
     kurt_np = np.nan_to_num(kurt_np)
-    # print("kurt_np :", kurt_np)
 
     # Normalization
     kurt_max = np.max(kurt_np)
-    if kurt_max == 0:
-        kurt_norm = []
-        return kurt_norm
-    kurt_norm = kurt_np/ kurt_max
-    # print("kurt_max : ", np.max(kurt_np))
-
+    kurt_norm = []
+    if kurt_max != 0:
+        kurt_norm = kurt_np/ kurt_max   
     return kurt_norm
 
 # View all seismograms 
@@ -289,12 +284,41 @@ def kurtosistest_for_all_seismograms(seismograms_path:str, trainwaves_path:str,
                     print('Done')
 
 ###############################################################################################
-# def kurtosis_starts_extraction_rewritten():
-"""
-Args:
-    
 
-"""
+from locevdet.event import Event, EventList
+
+def specific_starts_extraction_by_kurtosis(eventlist:EventList,
+        pre_trigger:float, post_trigger:float,
+        thr_on:float, win:float,
+        freqmin:float=0.05, freqmax:float=50):
+    """
+    Args:
+    """
+    for event in eventlist:
+        utc_startglobal = UTCDateTime(event.start_global)
+        for _, trainwave in event.trainwaves.items():
+            trace_trim = trim_trace(trainwave.trace, utc_startglobal, pre_trigger, post_trigger)
+            trace_filtered = trace_trim.copy().filter('bandpass', freqmin=freqmin, freqmax=freqmax)
+
+            kurt_norm = kurtosis_panda(trace_filtered, win)
+            if len(kurt_norm) != 0:
+                all_starttimes = starttimes_trigger_by_kurtosis(kurt_norm, thr_on, thr_off=0.25)
+                all_starttimes_delta = all_starttimes * trace_filtered.stats.delta
+                all_starttimes_from_start = [
+                    trace_filtered.stats.starttime + starts
+                    for starts in all_starttimes_delta
+                ]
+
+                specific_start_utc = min(
+                    all_starttimes_from_start,
+                    key=lambda x:abs(x-utc_startglobal)
+                )
+
+                trainwave.trace_trim = trace_trim
+                trainwave.start_specific = specific_start_utc
+                trainwave.all_starttimes_delta = all_starttimes_delta
+                trainwave.kurt_matrix = kurt_norm
+    return eventlist
 
 
 def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str, 
@@ -396,13 +420,6 @@ def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str,
                         envelope = envelope_by_hilbert(trace_filtered.data)
                         envelope_max = get_max_envelope(trace_filtered.data)
 
-
-                        ## Remove 5% of envelope data because precaution on borders
-                        # borders_length = int(5/100 * len(envelope))
-                        # print(borders_length)
-                        # envelope_without_borders = envelope[borders_length : -borders_length]
-                        # snr = float(format(SNR(envelope_without_borders), '.3f'))
-
                         # Kurtosis
                         kurt_norm = kurtosis_panda(trace_filtered, win)
                         if len(kurt_norm) != 0:
@@ -421,23 +438,6 @@ def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str,
 
                             start_name_trace = clean_utc_str(trace_filtered.stats.starttime)
                             end_name_trace = clean_utc_str(trace_filtered.stats.endtime)
-
-                            max_kurtosis = np.max(kurt_norm)
-
-                            # Add features to the new dictionary
-
-                            
-                            # all_starttimes_array = np.array(all_starttimes)
-                            # pos = (np.abs(all_starttimes_array-myNumber)).argmin()
-                            # start_kurt = all_starttimes[pos]
-                                
-                            
-                            # # Add this matrix into trainwave dictionary
-                        # # try:
-                        # #     new_trainwave["kurtosis"][file_station] = start_kurt
-                        # # except KeyError:
-                        # #     new_trainwave["kurtosis"] = {file_station : start_kurt}
-
 
 
                             ## SUBPLOT SEISMOGRAM ##
@@ -516,13 +516,5 @@ def kurtosis_starts_extraction(seismograms_path:str, trainwaves_path:str,
                 figname = trainwave + '.png'
                 fig_save_path = os.path.join(save_path_png, figname)
                 fig.savefig(fig_save_path, bbox_inches='tight')
-            
-                # Save specific starts into dictionary
-                
-                # trainwave_filepath = os.path.join(save_path_format, trainwave)
-                # if override or not os.path.isfile(save_path_format):
-                # if format_save == 'JSON':
-                #     with open(trainwave_filepath, 'w') as content:
-                #         json.dump(new_trainwave, content,  indent=1)
 
                          
