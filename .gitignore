@@ -135,6 +135,8 @@ dmypy.json
 mseeds
 sta_lta
 kurtosis
+data
+envelope
 
 # Events data
 events_csv
