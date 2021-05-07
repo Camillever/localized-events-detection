@@ -20,7 +20,7 @@ def list_seismograms(folder_path:str):
     filenames = []
     all_seismogram_reduced = []
     for filename in all_seismogram:
-        starttime = UTCDateTime(get_info_from_mseedname(filename, 'starttime'))
+        starttime = UTCDateTime(get_info_from_mseedname(filename)['starttime'])
         if filename.startswith('PF_NSR') and starttime < UTCDateTime("2020-02-07T10:32:10"):
             filenames.append(filename)
             

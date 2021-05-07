@@ -76,7 +76,7 @@ def read_events_times_from_csv(csv_events_path:str, csv_delimiter:str=';',
     """
     csv_events = pd.read_csv(csv_events_path, delimiter=csv_delimiter)
     events_times = []
-    for _, row in csv_events.iterrows():
+    for i, row in csv_events.iterrows():
         time_window = ref_duration_to_time_window(
             time_reference=UTCDateTime(row[0]),
             duration=float(row[2]),
