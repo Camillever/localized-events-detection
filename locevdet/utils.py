@@ -5,9 +5,10 @@ import pandas as pd
 from typing import Tuple, List
 from obspy import UTCDateTime
 
+from sklearn.linear_model import LinearRegression
+import matplotlib.dates as dates
 
-
-def kurtosis_panda(trace, win_kurt_init):
+def kurtosis_norm(trace, win_kurt_init):
     """ Apply recursive kurtosis calculation on the given trace and returns a normalized kurtosis matrix.
     (See : https://pandas.pydata.org/pandas-docs/version/0.25.3/reference/api/pandas.core.window.Rolling.kurt.html )
 
@@ -70,33 +71,26 @@ def ref_duration_to_time_window(time_reference:UTCDateTime, duration:float=0,
         end_time = endtime + time_offset[1]
     return start_time, end_time
 
-def get_info_from_mseedname(filename:str, info_type:str)-> str:
+def get_info_from_mseedname(filename:str)-> dict:
     """
     Args:
         filename : Name of the mseed file
             with the nomenclature : '{network}_{station}_{starttime}_{endtime}'
-        info_type : String of type of information 
-            Possibility of values :
-                - 'network'
-                - 'station'
-                - 'starttime' (of the mseed signal)
-                - 'endtime' (of the mseed signal)
-                - 'periodtime' ('starttime_endtime' of the mseed signal)
     Returns:
-        The given type info (string)
+        The dictionary of all information given by the seismogram's filename
+
+        NB : periodtime is a string as "{str(starttime)}_{str(endtime)}"
     """
-    if info_type == 'network':
-        return str(filename.split('_')[0])
-    elif info_type == 'station':
-        return str(filename.split('_')[1])
-    elif info_type == 'starttime':
-        return str(filename.split('_')[2])
-    elif info_type == 'endtime':
-        return str(filename.split('_')[3])  
-    elif info_type == 'periodtime':
-        starttime = get_info_from_mseedname(filename, 'starttime')
-        endtime = get_info_from_mseedname(filename, 'endtime')
-        return "_".join((starttime, endtime))
+    title_mseed = filename.split('_')
+            
+    seismogram_info = {
+        'network': title_mseed[0],
+        'station': title_mseed[1],
+        'starttime': UTCDateTime(title_mseed[2]),
+        'endtime': UTCDateTime(title_mseed[3]),
+        'periodtime': '_'.join((str(title_mseed[2]),str(title_mseed[3])))
+    }
+    return seismogram_info
 
 def get_starttime_trainwave(filename_trainwave:str):
     """
@@ -111,7 +105,7 @@ def get_starttime_trainwave(filename_trainwave:str):
     """
     return filename_trainwave.split('_')[-1]
 
-def rooling_max(signal, win_lenght=None):
+def rolling_max(signal, win_lenght=None):
     if win_lenght is None:
         win_lenght = len(signal) // 20
 
@@ -127,7 +121,7 @@ def rooling_max(signal, win_lenght=None):
 
 
 
-from locevdet.event import *
+from locevdet.eventlist import EventList
 from locevdet.visualisation.plots import hist_band_freq
 
 def freq_band_interest(eventlist:EventList, save_fig_path:str=None, show:bool=True):
@@ -196,3 +190,11 @@ def freq_band_interest(eventlist:EventList, save_fig_path:str=None, show:bool=Tr
 #         all_ti_from_mat.append(ti_utc_datetime)
 #     return all_ti_from_mat
 
+def linear_regression_on_dates(X, Y):
+    """ TODO """
+    X_train = np.array(dates.date2num(X)).reshape(-1, 1)
+    Y_train = np.array(dates.date2num(Y)).reshape(-1, 1)
+    modeleReg=LinearRegression()
+    modeleReg.fit(X_train, Y_train)
+    Y_pred = modeleReg.predict(X_train)
+    return X_train, Y_train, Y_pred, modeleReg
