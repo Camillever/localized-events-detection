@@ -132,10 +132,11 @@ dmypy.json
 .vscode
 
 # Generated data
+seismograms
+dictionaries_data
 mseeds
 sta_lta
 kurtosis
-data
 envelope
 
 # Events data
@@ -153,3 +154,4 @@ Kristel's results
 mseed_RESIF
 notebooks
 topo
+
