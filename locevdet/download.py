@@ -98,7 +98,7 @@ def get_events_times_from_some_mseeds(mseeds_path:str)-> List[Tuple[float]]:
 
     """
     mseeds = os.listdir(mseeds_path)
-    periods = list(set(get_info_from_mseedname(filename, 'periodtime')
+    periods = list(set(get_info_from_mseedname(filename)['periodtime']
         for filename in mseeds))
     events_times = []
     for period in periods :
