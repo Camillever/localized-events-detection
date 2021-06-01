@@ -4,8 +4,6 @@
 
 import os
 
-import pandas as pd
-
 from obspy import UTCDateTime
 from obspy.core import read
 
