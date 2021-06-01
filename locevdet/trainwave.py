@@ -3,6 +3,7 @@
 import numpy as np
 
 from copy import copy
+from typing import Tuple
 
 from obspy import UTCDateTime
 
@@ -19,10 +20,13 @@ class Trainwave():
     def __init__(self, trace, station:Station, start_global, **kwargs):
         self.trace = trace
         self.station = station
-        self.start_global = UTCDateTime(start_global)
 
-        self.pre_trigger = kwargs.get('pre_trigger', 5)
-        self.post_trigger = kwargs.get('pre_trigger', 30)
+        self.start_global = UTCDateTime(start_global)
+        self.nsta_time = kwargs.get('nsta_time', 1)
+        self.nlta_time = kwargs.get('nlta_time', 30)
+
+        self.pre_trigger = kwargs.get('pre_trigger', 10)
+        self.post_trigger = kwargs.get('pre_trigger', 50)
         self.trace_trimmed = trim_trace(self.trace.copy(), self.start_global,
             self.pre_trigger, self.post_trigger)
 
@@ -37,12 +41,14 @@ class Trainwave():
 
         # Envelope, SNR and trainwave's end detection
         self.snr = kwargs.get('snr', None)
+        self.noise_level = kwargs.get('noise_level', None)
+        self.all_endtimes_delta = kwargs.get('all_endtimes_delta', None)
         self.end_specific = kwargs.get('end_specific', None)
 
         # Matlab other variables
         self.matlab_data = kwargs.get('matlab_data', None)
 
-    def kurtosis(self, window, threshold_on, threshold_off=0.25, freqmin=0.05, freqmax=50):
+    def kurtosis(self, window, threshold_on, threshold_off=0.25):
         kurt_norm = kurtosis_norm(self.trace_filtered, window)
         kurtosis_data = None
         if len(kurt_norm) != 0:
@@ -70,13 +76,75 @@ class Trainwave():
         self.kurtosis_data = kurtosis_data
         return kurtosis_data
 
-    def envelope(self, rolling_max_window_purcent:float=0):
+    def envelope(self, rolling_max_window:float=0):
         analytic_signal = hilbert(self.trace_filtered)
         envelope = np.abs(analytic_signal)
-        if rolling_max_window_purcent > 0:
-            rolling_max_window = int(rolling_max_window_purcent * len(self.trace_filtered))
+        print("hilbert envelope :", envelope.size)
+        if rolling_max_window > 0:
             envelope = rolling_max(envelope, rolling_max_window)
         return envelope
+    
+    def snr_calculation(self, rolling_max_window:float=0, 
+            time_intervall_inspect:Tuple[float]=[1,10], 
+            window_inspect:float=5):
+
+        envelope = self.envelope(rolling_max_window)
+
+        delta = self.trace_filtered.stats.delta
+        index_start_global = (self.start_global - self.trace_filtered.stats.starttime) / delta
+        window_inspect_npts = window_inspect / delta
+        npts_intervall_inspect_noise = time_intervall_inspect[0] / delta
+        npts_intervall_inspect_signal = time_intervall_inspect[1] / delta
+
+        end_index_noise_window = int(index_start_global - npts_intervall_inspect_noise)
+        start_index_noise_window = int(end_index_noise_window - window_inspect_npts)
+
+        noise_level = np.mean(envelope[start_index_noise_window : end_index_noise_window])
+        self.noise_level = noise_level
+
+        start_index_signal_window = int(index_start_global + npts_intervall_inspect_signal)
+        end_index_signal_window = int(start_index_signal_window + window_inspect_npts)
+
+        signal_level = np.mean(envelope[start_index_signal_window : end_index_signal_window])
+
+        snr = signal_level / noise_level
+        self.snr = snr
+
+        return snr
+
+    def endtime_detection(self, 
+            rolling_max_window:float=0, 
+            time_intervall_inspect:Tuple[float]=[1,10],
+            thr_snr_purcent:float=1.1):
+        
+        envelope = self.envelope(rolling_max_window)
+        print("envelope :", envelope)
+        print("envelope size :",envelope.size)
+        delta = self.trace_filtered.stats.delta
+        index_start_global = int((self.start_global - self.trace_filtered.stats.starttime) / delta)
+        index_inspect_signal = int(time_intervall_inspect[1] / delta)
+
+        threshold_snr_end = thr_snr_purcent * self.noise_level
+        thrsedhold_on = envelope[index_start_global + index_inspect_signal]
+        print("thrsedhold_on :", thrsedhold_on)
+
+        triggersnr_samples_detection = trigger_onset(envelope, thrsedhold_on, threshold_snr_end)
+
+        all_endtimes = triggersnr_samples_detection[:,1]
+        all_endtimes_delta = all_endtimes * self.trace_filtered.stats.delta
+        all_endtimes_utc = [
+            self.trace_filtered.stats.starttime + ends
+            for ends in all_endtimes_delta
+        ]
+        self.all_endtimes_delta = all_endtimes_delta
+        print(all_endtimes_utc)
+
+        end_specific = UTCDateTime(all_endtimes_utc[0])
+        print(end_specific)
+        self.end_specific = end_specific
+
+        return all_endtimes_utc, end_specific
 
     def __repr__(self):
         return f"Trainwave{self.trace}"
+    
