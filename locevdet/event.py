@@ -1,93 +1,20 @@
-""" Classes Trainwave / Event / Eventlist"""
+""" Class for Event"""
 
 import os
-
 import json
-import pickle
 
 from typing import List
-from copy import copy
 
-import numpy as np
 import matplotlib.pyplot as plt
 
-from obspy import UTCDateTime
 from obspy.core import Stream
-from obspy.signal.trigger import trigger_onset
-
-from mat4py import loadmat
-from scipy.signal import hilbert
+from obspy.signal.trigger import classic_sta_lta
 
 from locevdet.stations import Station
-from locevdet.waveform_processing import trim_trace
-from locevdet.utils import clean_utc_str, rooling_max, kurtosis_panda
+from locevdet.trainwave import Trainwave
 
-class Trainwave():
-
-    def __init__(self, trace, station:Station, start_global, **kwargs):
-        self.trace = trace
-        self.station = station
-        self.start_global = UTCDateTime(start_global)
-
-        self.pre_trigger = kwargs.get('pre_trigger', 5)
-        self.post_trigger = kwargs.get('pre_trigger', 30)
-        self.trace_trimmed = trim_trace(self.trace.copy(), self.start_global,
-            self.pre_trigger, self.post_trigger)
-
-        self.freqmin_interest = kwargs.get('freqmin_interest', 0.05)
-        self.freqmax_interest = kwargs.get('freqmax_interest', 50)
-        self.trace_filtered = self.trace_trimmed.copy().filter('bandpass',
-            freqmin=self.freqmin_interest, freqmax=self.freqmax_interest)
-
-        # Kurtosis
-        self.kurtosis_params = kwargs.get('kurtosis_params', None)
-        self.kurtosis_data = kwargs.get('kurtosis_data', None)
-
-        # Envelope, SNR and trainwave's end detection
-        self.snr = kwargs.get('snr', None)
-        self.end_specific = kwargs.get('end_specific', None)
-
-        # Matlab other variables
-        self.matlab_data = kwargs.get('matlab_data', None)
-
-    def kurtosis(self, window, threshold_on, threshold_off=0.25, freqmin=0.05, freqmax=50):
-        kurt_norm = kurtosis_panda(self.trace_filtered, window)
-        kurtosis_data = None
-        if len(kurt_norm) != 0:
-            max_kurtosis = np.max(kurt_norm)
-            triggertime_trainwaves_kurtosis = trigger_onset(kurt_norm,
-                threshold_on*max_kurtosis, threshold_off*max_kurtosis)
-            all_starttimes = triggertime_trainwaves_kurtosis[:,0]
-            all_starttimes_delta = all_starttimes * self.trace_filtered.stats.delta
-            all_starttimes_from_start = [
-                self.trace_filtered.stats.starttime + starts
-                for starts in all_starttimes_delta
-            ]
-
-            specific_start_utc = min(
-                all_starttimes_from_start,
-                key=lambda x:abs(x-self.start_global)
-            )
-
-            kurtosis_data = {
-                'start_specific': specific_start_utc,
-                'all_starttimes_delta': all_starttimes_delta,
-                'kurtosis_matrix': kurt_norm
-            }
-
-        self.kurtosis_data = kurtosis_data
-        return kurtosis_data
-
-    def envelope(self, rolling_max_window_purcent:float=0):
-        analytic_signal = hilbert(self.trace_filtered)
-        envelope = np.abs(analytic_signal)
-        if rolling_max_window_purcent > 0:
-            rolling_max_window = int(rolling_max_window_purcent * len(self.trace_filtered))
-            envelope = rooling_max(envelope, rolling_max_window)
-        return envelope
-
-    def __repr__(self):
-        return f"Trainwave{self.trace}"
+from locevdet.utils import clean_utc_str
+from locevdet.visualisation.plots import demo_con_style
 
 class Event():
 
@@ -103,9 +30,34 @@ class Event():
             trace = stream[station_index]
             self.trainwaves[station] = Trainwave(trace, station, self.start_global)
 
-    def plot_envelope(self, save_fig_path:str=None, show:bool=None):
+
+    def plot(self, type_graph:str='stalta', 
+            save_fig_path:str=None, show:bool=False, **kwargs):
+        """
+        Plots the given type of graphic
+
+        Args:
+            type_graph : Specify the type of graphic
+                - 'stalta' : To plot stalta method on traces per event.
+                            This method determines a global start of an event 
+                            (triggerd by 2 stations in simultaneous)
+                - 'kurtosis' : To plot kurtosis method on traces trimmed and filtered per event.
+                            This method determines a start a the event per station (trainwave)
+                            more precisely.
+                - 'envelope' : To plot the envelopes of traces trimmed and filtered per event.
+                            The signal to noise ratio is given and the specific end of the trainwave
+                            is also calculated.
+            
+            save_fig_path : Directory path of the folder where the plots will be saved.
+                Per default : None --> No save
+            show : To show the plots in a matplotlib window if True. Per default : False.
+        Returns : 
+            The given type plots and save it eventually (if directory path is given)
+
+        """
         plt.close("all")
-        fig = plt.figure(f"enveloppe _{str(self.start_global)}")
+
+        fig = plt.figure(f"{type_graph}")
 
         if show is None:
             show = save_fig_path is None
@@ -115,42 +67,121 @@ class Event():
 
         nb_stations = len(self.stations)
         for num, (_, trainwave) in enumerate(self.trainwaves.items()):
+            if type_graph == 'stalta':
+                trace = trainwave.trace
+                times = trace.times()
+                freqmin, freqmax = 0.5, 50
+                ax1 = fig.add_subplot(nb_stations, 2, (num*nb_stations)+1)
+            else :
+                trace_trim = trainwave.trace_trimmed
+                trace_filtered = trainwave.trace_filtered
+                trace = trace_filtered.copy()
+                times = trace_filtered.times()
 
-            trace_trim = trainwave.trace_trimmed
-            trace_filtered = trainwave.trace_filtered
-            start_name_trace = clean_utc_str(trace_filtered.stats.starttime)
-            end_name_trace = clean_utc_str(trace_filtered.stats.endtime)
-            freqmin = trainwave.freqmin_interest
-            freqmax = trainwave.freqmax_interest
+                freqmin = trainwave.freqmin_interest
+                freqmax = trainwave.freqmax_interest
 
-            times = trace_filtered.times()
+                if type_graph == 'envelope':
+                    ax1 = fig.add_subplot(nb_stations, 1, num+1)
+                else:
+                    ax1 = fig.add_subplot(2, nb_stations, num+1)
 
+            start_name_trace = clean_utc_str(trace.stats.starttime)
+            end_name_trace = clean_utc_str(trace.stats.endtime)
+            
             ## SUBPLOT SEISMOGRAM ##
-            ax = fig.add_subplot(1, nb_stations, num+1)
-            ax_title = f'{trainwave.station.name} {freqmin}-{freqmax}Hz'
-            ax.set_title(ax_title, fontsize=15, fontweight='bold')
-            line_raw = ax.plot(times, trace_trim.data, color='grey', alpha=0.3, linewidth=1.1)
-            line_filt = ax.plot(times, trace_filtered.data, color='black', linewidth=0.5)
 
-            # Envelope
-            envelope = trainwave.envelope(rolling_max_window_purcent=0.01)
-            env_line = ax.plot(times, envelope, color='purple', linewidth=2.5)
+            ax1_title = f'{trainwave.station.name} {freqmin}-{freqmax}Hz'
+            ax1.set_title(ax1_title, fontsize=15, fontweight='bold')
+            xmin1, xmax1 = ax1.get_xlim()
+            ymin1, ymax1 = ax1.get_ylim()
 
-            # Start global of trainwave
-            start_global_line = ax.axvline(trainwave.pre_trigger, color='darkgreen', linewidth=3)
+            label_rawtrace = "Sismogramme (0.5-50Hz)"
+            label_tracetrim = f"Sismogramme filtré ({freqmin}-{freqmax}Hz)"
+            label_startglobal = "Début global de l\'événement détecté par STA-LTA"
 
-            # Start specific
-            # start_specific = trainwave.kurtosis_data['start_specific'] \
-            #     - trace_filtered.stats.starttime
-            # start_specific_line = ax.axvline(start_specific, color='darkred', linewidth=3)
+            startglobal = trainwave.start_global - trace.stats.starttime
+            ax1.axvline(startglobal, ymin1, ymax1, color='darkgreen', linewidth=2.5, label=label_startglobal)
 
-            # Threshold SNR
-            # thr_line[nb_stations + num] = ax[nb_stations + num].axhline(
-            #     threshold_on * max_kurtosis, 
-            #     xmin, xmax, 
-            #     color='red',
-            #     linestyle='--'
-            # )
+            if type_graph == 'stalta':
+                ax1.plot(times, trace.data, color='black', alpha=0.3, linewidth=1.1, label=label_rawtrace)
+
+                nsta = int(trainwave.nsta_time*trace.stats.sampling_rate)
+                nlta = int(trainwave.nlta_time*trace.stats.sampling_rate)
+                cft = classic_sta_lta(trace.data, nsta, nlta)
+
+                ax2 = fig.add_subplot(nb_stations, 2, (num*nb_stations)+2)
+                ax2.plot(times, cft, color='blue', alpha=0.3, linewidth=1.1, label='STA-LTA classique')
+                ymin2, ymax2 = ax2.get_ylim()
+                ax2.axvline(startglobal, ymin2, ymax2, color='darkgreen', linewidth=2.5, label=label_startglobal)
+            
+            elif type_graph == 'kurtosis':
+                trace_trim = trainwave.trace_trimmed
+                trim_times = trace_trim.times()
+                ax1.plot(trim_times, trace_trim.data, color='grey', alpha=0.3, linewidth=1.1, label=label_rawtrace)
+                ax1.plot(times, trace.data, color='black', linewidth=0.5, label=label_tracetrim)
+                ymin1, ymax1 = ax1.get_ylim()
+
+                ax2 = fig.add_subplot(2, nb_stations, nb_stations+num+1)
+                ymin2, ymax2 = ax2.get_ylim()
+                xmin2, xmax2 = ax2.get_xlim()
+                ax2.axvline(startglobal, ymin2, ymax2, color='darkgreen', linewidth=2.5)
+
+                kurt_norm = trainwave.kurtosis_data['kurtosis_matrix']
+                ax2.plot(times, kurt_norm, color='blue', linewidth=1.2, label="Kurtosis")
+
+                all_starttimes_delta = trainwave.kurtosis_data['all_starttimes_delta']  
+                labelstarts = "Tous les débuts de trains d\'ondes détectés par Kurtosis"
+                ax1.vlines(all_starttimes_delta, ymin1, ymax1, colors='darkorange', label=labelstarts)
+                ax2.vlines(all_starttimes_delta, ymin2, ymax2, colors='darkorange')
+
+                start_specific = trainwave.kurtosis_data['start_specific'] - trace.stats.starttime
+                label_startspecific = "Début précis du train d\'onde détecté par Kurtosis"
+                ax1.axvline(start_specific, ymin1, ymax1, color='darkred', alpha=0.5, linewidth=3, label=label_startspecific)
+                ax2.axvline(start_specific, ymin2, ymax2, color='darkred', alpha=0.5, linewidth=3)
+
+                if trainwave.matlab_data is not None :
+                    ti = trainwave.matlab_data['trainwave']['initial_time']
+                    ti_delta = ti - trace.stats.starttime
+                    label_ti = "Début précis du train d\'onde détecté par Méthode de Stockwell"
+                    ax1.axvline(ti_delta, ymin1, ymax1, color='pink', linewidth=3, alpha=0.5, label=label_ti)
+                    ax2.axvline(ti_delta, ymin2, ymax2, color='pink', alpha=0.5, linewidth=3)
+
+
+                window = kwargs.get('window', 150)
+                window_in_time = window * trace.stats.delta
+                demo_con_style(ax2, f"Fenêtre glissante : {window_in_time} s", colorborder='blue')
+                threshold_on = kwargs.get('threshold_on', 0.5)
+                ax2.axhline(threshold_on, 
+                xmin2, xmax2,
+                color='red',
+                linestyle='--', 
+                linewidth=1.2
+                )
+
+            else:
+                ax1.plot(times, trace.data, color='grey', linewidth=0.5, label=label_tracetrim)
+
+                rolling_max_window = kwargs.get('rolling_max_window', 1)
+                envelope = trainwave.envelope(rolling_max_window)
+                ax1.plot(times, envelope, color='darkblue', linewidth=2.5, label='Enveloppe du signal')
+                ymin1, ymax1 = ax1.get_ylim()
+
+                snr_title = format(trainwave.snr, '.2e')
+                demo_con_style(ax1, f"snr : {snr_title}", colorborder='black')
+
+                endspecific = trainwave.end_specific - trace.stats.starttime
+                ax1.axvline(endspecific, ymin1, ymax1, color='darkred', linewidth=3)
+
+                thr_snr_purcent = kwargs.get('rolling_max_window', 1.1)
+                noise_level = trainwave.noise_level
+                threshold_snr_end = thr_snr_purcent * noise_level
+                ax1.axhline(threshold_snr_end, 
+                xmin1, xmax1,
+                color='red',
+                linestyle='--', 
+                linewidth=1.2
+                )
 
         title = (
             f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}\n"
@@ -158,25 +189,16 @@ class Event():
         fig.suptitle(title, fontsize=18)
         fig.subplots_adjust(top=5)
 
-        handles = [
-            line_raw[0],
-            line_filt[0],
-            start_global_line,
-            # start_specific_line,
-            env_line[0],
-            ]
-
-        labels = [
-            'Sismogramme non filtré',
-            'Sismogramme filtré',
-            'Début global de l\'événement détecté par STA-LTA',
-            # 'Début du train d\'onde détecté par Kurtosis',
-            'Enveloppe de chaque train d\'onde'
-            ]
-
+        
+        handles_, labels_ = ax1.get_legend_handles_labels()
+        if ax2:
+            handles2_, labels2_ = ax2.get_legend_handles_labels()
+            handles_ += handles2_
+            labels_ += labels2_
+        by_label = dict(zip(labels_, handles_)) # To have no duplicates in the legend
         fig.legend(
-            handles,
-            labels,
+            by_label.values(), 
+            by_label.keys(),
             loc='upper right',
             fontsize=10,
             fancybox=True,
@@ -193,6 +215,7 @@ class Event():
             figname = f"event_{clean_utc_str(self.start_global)}.png"
             fig_save_path = os.path.join(save_fig_path, figname)
             fig.savefig(fig_save_path, bbox_inches='tight')
+
 
     def to_json(self):
         return {
@@ -217,65 +240,3 @@ class Event():
 
     def __repr__(self):
         return f"Event({str(self)}, {self.trainwaves})"
-
-class EventList(list):
-
-    def __init__(self, events:List[Event]=None):
-        events = events if events is not None else []
-        super().__init__(events)
-        if events is None:
-            self.events = []
-        else:
-            for event in events:
-                if not isinstance(event, Event):
-                    raise TypeError('EventList must be composed of Event objects')
-            self.events = events
-
-    def to_json(self):
-        return {str(event): event.to_json() for event in self.events}
-
-    def save(self, filepath, format_save='PICKLE', override=False):
-        if override or not os.path.isfile(filepath):
-            if format_save == 'JSON':
-                with open(filepath, 'w') as content:
-                    json.dump(self.to_json(), content,  indent=1)
-            elif format_save == 'PICKLE':
-                with open(filepath, 'wb') as content:
-                    pickle.dump(self, content)
-
-
-    def set_matlab_data(self, matlab_folder_path, max_time_difference=5):
-        matlab_filepaths = [
-            os.path.join(matlab_folder_path, filename)
-            for filename in os.listdir(matlab_folder_path)
-            if filename.endswith('.mat')
-        ]
-
-        for matlab_filepath in matlab_filepaths:
-            
-            title_data = matlab_filepath.split('_')
-            
-            matlab_data = {
-                'network': title_data[3],
-                'station': title_data[4],
-                'starttime': UTCDateTime(title_data[5]),
-                'endtime': UTCDateTime(title_data[6].split('.')[0]),
-            }
-            matlab_data['periodtime'] = "_".join((str(matlab_data['starttime']), str(matlab_data['endtime'])))
-            matlab_starttime = UTCDateTime(matlab_data['starttime'])
-
-            for event in self:
-                for _, trainwave in event.trainwaves.items():
-                    starttime = UTCDateTime(trainwave.trace.stats.starttime)
-                    same_starttime = abs(starttime - matlab_starttime) 
-                    if same_starttime < max_time_difference and trainwave.station.name == matlab_data['station']:
-                        mat = loadmat(matlab_filepath)
-                        matlab_data['trainwave'] = {
-                            'radial_signal': mat["wavetrains"]['r'][0],
-                            'initial_time': mat["wavetrains"]['Tiwp'][0],
-                            'fmin': mat["fmin"],
-                            'centralfrequency': mat["wavetrains"]['centralfrequency'][0],
-                            'duration': mat["wavetrains"]['duration'][0]
-                        }
-                        trainwave.matlab_data = matlab_data
-                        
