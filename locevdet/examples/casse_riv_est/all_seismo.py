@@ -1,5 +1,5 @@
 """ Module to specify all the seismograms worthy to be use
-You can modify the conditions in this function"""
+You can modify the conditions in this module"""
 
 import os
 
