@@ -2,11 +2,12 @@
 import os
 import numpy as np
 import pandas as pd
-from typing import Tuple, List
+from typing import Tuple
 from obspy import UTCDateTime
 
 from sklearn.linear_model import LinearRegression
 import matplotlib.dates as dates
+
 
 def kurtosis_norm(trace, win_kurt_init):
     """ Apply recursive kurtosis calculation on the given trace and returns a normalized kurtosis matrix.
@@ -92,6 +93,33 @@ def get_info_from_mseedname(filename:str)-> dict:
     }
     return seismogram_info
 
+def localisation(filename:str):
+    """
+    Give WGS94 (longitude, latitude, z) and RGR92 (x, y, z) coordinates
+    of the station from a given MSEED filename
+    
+    Args:
+        filename : name of the MSEED file with the nomenclature : 
+            {network}_{station}_{starttime}_{endtime} 
+    
+    Returns:
+        dictionary containing location informations of the given filename
+
+    """
+    positions_station = pd.read_csv(
+        os.path.join('Caracteristics_stations', 'positions_stations.csv'), 
+        sep=';', 
+        index_col='Station')
+    station = get_info_from_mseedname(filename)['station']
+    location = {
+        "latitude" : positions_station.loc[str(station), "Latitude"],
+        "longitude" : positions_station.loc[str(station), "Longitude"],
+        "x" : positions_station.loc[str(station), "x"],
+        "y" : positions_station.loc[str(station), "y"],
+        "z": positions_station.loc[str(station), "z"]
+    }
+    return location
+
 def get_starttime_trainwave(filename_trainwave:str):
     """
     Give the start time string of the trainwave dictionary name
@@ -117,78 +145,6 @@ def rolling_max(signal, win_lenght=None):
             max_signal[i] = np.max(signal[i:i+win_lenght])
 
     return max_signal
-
-
-
-
-from locevdet.eventlist import EventList
-from locevdet.visualisation.plots import hist_band_freq
-
-def freq_band_interest(eventlist:EventList, save_fig_path:str=None, show:bool=True):
-    """ TODO
-
-
-    """
-
-    all_central_frq = []
-    all_fmin = []
-
-    for event in eventlist:
-        for _, trainwave in event.trainwaves.items():
-            if trainwave.matlab_data is not None : 
-                all_fmin.append(trainwave.matlab_data['trainwave']['fmin'])
-                all_central_frq.append(trainwave.matlab_data['trainwave']['centralfrequency'])
-
-    mean_fmin = np.mean(all_fmin)
-    fc = np.max(all_central_frq)
-
-    # Histograms
-    if save_fig_path is not None or show is True:
-        hist_band_freq(
-            all_fmin, 
-            all_central_frq, 
-            fmin=mean_fmin, 
-            fc=fc, 
-            save_fig_path=save_fig_path, 
-            show=show)
-        
-    return float(format(mean_fmin, '.2f')), float(format(fc, '.2f'))
-
-# def ti_to_utcdatetime(filename_matlab:str, ti:float):
-#     """
-#     Conversion of trainwave start in seconds to UTCDateTime
-
-#     Args:
-#         filename_matlab : matlab file name 
-#             with nomenclature 'Ret_{network}_{station}_{starttime}_{endtime}'
-#         ti : Start of the wave train in seconds refered from the start of the seismogram (filename)
-
-#     Returns :
-#         ti_utc_datetime : Start of the wave train in UTCDateTime
-#     """
-#     starttime = UTCDateTime(get_info_from_matname(filename_matlab)['starttime'])
-#     ti_utc_datetime = starttime + ti
-
-#     return ti_utc_datetime
-
-# def similarity_ti(matlab_folder_path:str, mseeds_path:str, stations:list):
-#     """TODO
-#     """
-#     all_data_mat = [ 
-#         mat for mat in os.listdir(matlab_folder_path)
-#         if mat.endswith('.mat')
-#         ]
- 
-#     all_seismogram = os.listdir(mseeds_path)
-#     all_ti_from_mat = []
-
-#     for matname in all_data_mat:
-#         print(matname)
-#         ti = ti_matlab_results(matlab_folder_path, matname)
-#         print("ti :", ti)
-#         ti_utc_datetime = ti_to_utcdatetime(matname, ti)
-#         all_ti_from_mat.append(ti_utc_datetime)
-#     return all_ti_from_mat
 
 def linear_regression_on_dates(X, Y):
     """ TODO """
