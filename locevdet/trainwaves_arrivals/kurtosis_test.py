@@ -285,7 +285,7 @@ def kurtosistest_for_all_seismograms(seismograms_path:str, trainwaves_path:str,
 
 ###############################################################################################
 
-from locevdet.event import Event, EventList
+from locevdet.eventlist import EventList
 
 def specific_starts_extraction_by_kurtosis(eventlist:EventList,
         pre_trigger:float, post_trigger:float,

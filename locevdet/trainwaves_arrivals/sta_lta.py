@@ -13,7 +13,8 @@ from obspy.signal.trigger import coincidence_trigger
 from obspy import UTCDateTime
 
 from locevdet.utils import get_info_from_mseedname
-from locevdet.event import Event, EventList
+from locevdet.event import Event
+from locevdet.eventlist import EventList
 from locevdet.stations import STATIONS_NETWORKS
 
 def stalta_detect_events(folder_in:str, all_seismogram:List[str],
@@ -45,7 +46,7 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
     """
     # Compile the names of all seismograms
 
-    period_filename = list(set(get_info_from_mseedname(filename, 'periodtime')
+    period_filename = list(set(get_info_from_mseedname(filename)['periodtime']
         for filename in all_seismogram))
     period_filename.sort()
 
@@ -108,16 +109,19 @@ def build_period_stream(period_name:str, folder_in:str, mseed_name:str,
         Modify the stream (by adding the traces for the given period time)
     
     """
-    if period_name == get_info_from_mseedname(mseed_name, 'periodtime'):
+    if period_name == get_info_from_mseedname(mseed_name)['periodtime']:
         filepath = os.path.join(folder_in, mseed_name)
         seismogram = read(filepath)
+        
+
         for _,seismo in enumerate(seismogram):
             if seismo.stats.component == 'Z':
                 trace = seismo
                 stream_traces += trace
                 if trace.stats.sampling_rate != sampling_rate:
                     return
-        trace_filt = trace.filter('bandpass', freqmin=filter_band[0], freqmax=filter_band[1])
+        trace_copy = trace.copy()
+        trace_filt = trace_copy.filter('bandpass', freqmin=filter_band[0], freqmax=filter_band[1])
         stream_traces_filt += trace_filt
 
 def remove_too_close_trainwaves(event_list:EventList, minimum_time:float=0)-> List[str]:
