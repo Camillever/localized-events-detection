@@ -16,6 +16,7 @@ from locevdet.utils import get_info_from_mseedname
 from locevdet.event import Event
 from locevdet.eventlist import EventList
 from locevdet.stations import STATIONS_NETWORKS
+from locevdet.examples.casse_riv_est.download import apodisation
 
 def stalta_detect_events(folder_in:str, all_seismogram:List[str],
         freqmin:int, freqmax:int,
@@ -69,7 +70,6 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
         # Add every single event in this period
         for triggered_event in triggered_events:
             start_global = UTCDateTime(triggered_event['time'])
-
             traces = [
                 stream_traces[stream_stations.index(station)]
                 for station in triggered_event['stations']
@@ -79,10 +79,18 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
                 STATIONS_NETWORKS[trace.stats.network][trace.stats.station]
                 for trace in traces
             ]
+            starttime = stream_traces[0].stats.starttime
+            endtime = stream_traces[0].stats.endtime
 
-            event = Event(start_global=start_global, stations=stations)
-            event.add_trainwaves(stream_traces)
-            event_list.append(event)
+            # To not save event which are too close of borders (affected by apodization)
+            apodization_time_restricted = apodisation*(endtime-starttime)
+
+            if start_global <= (endtime - apodization_time_restricted) and \
+                start_global >= (starttime + apodization_time_restricted) :
+
+                event = Event(start_global=start_global, stations=stations)
+                event.add_trainwaves(stream_traces)
+                event_list.append(event)
 
     # Remove duplicate and false events from event_list
     duplicate_ev_removed = remove_too_close_trainwaves(event_list, minimum_time)
