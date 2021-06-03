@@ -10,8 +10,9 @@ from locevdet.download import get_events_times_from_some_mseeds
 CLIENT = 'RESIF'
 
 pre_filt = (0.1, 0.5, 49, 50)
+apodisation = 0.05
 my_process_waveforms = \
-    lambda waveforms: standard_process_waveforms(waveforms, 0.05, "VEL", pre_filt)
+    lambda waveforms: standard_process_waveforms(waveforms, apodisation, "VEL", pre_filt)
 
 
 
