@@ -7,15 +7,15 @@ from typing import List
 import numpy as np
 
 import matplotlib.pyplot as plt
-import matplotlib.dates as dates
-
-from scipy import stats
+import matplotlib.dates as dates   
 
 from obspy import UTCDateTime
-
 from mat4py import loadmat
+from sklearn.metrics import mean_squared_error, r2_score
 
 from locevdet.event import Event
+from locevdet.utils import linear_regression_on_dates
+from locevdet.visualisation.plots import demo_con_style
 
 class EventList(list):
 
@@ -108,11 +108,6 @@ class EventList(list):
     Returns:
         TODO
         """
-        import matplotlib.dates as dates
-        from sklearn.metrics import mean_squared_error, r2_score
-        from locevdet.utils import linear_regression_on_dates
-        from locevdet.visualisation.plots import demo_con_style
-
         plt.close("all")
 
         list_HIM_starts_specific, list_HIM_ti, diff_ti_HIM = [], [], []
@@ -136,14 +131,14 @@ class EventList(list):
                         list_HIM_starts_specific.append(UTCDateTime(start_specific)) # ELSE : Nan 
                         diff_ti_HIM.append(
                             np.abs(ti - start_specific))
-                        # list_HIM_nsr.append(trainwave.snr)
+                        list_HIM_nsr.append(trainwave.snr)
 
                     elif trainwave.station.name == 'FRE':
                         list_FRE_ti.append(ti)
                         list_FRE_starts_specific.append(UTCDateTime(start_specific))  ## ELSE : Nan
                         diff_ti_FRE.append(
                             np.abs(ti - start_specific))
-                        # list_FRE_nsr.append(trainwave.snr)
+                        list_FRE_nsr.append(trainwave.snr)
         print("list_HIM_ti :", list_HIM_ti)
         print("list_HIM_starts_specific :", list_HIM_starts_specific)
         print("diff_ti_HIM :", diff_ti_HIM)
@@ -153,12 +148,10 @@ class EventList(list):
         list_HIM_starts_specific_date64 = [np.datetime64(date) for date in list_HIM_starts_specific]
         list_FRE_ti_date64 = [np.datetime64(date) for date in list_FRE_ti]
         list_FRE_starts_specific_date64 = [np.datetime64(date) for date in list_FRE_starts_specific]
-        
 
         myFmt = dates.DateFormatter('%m %d %H:%M')
         secondsFmt = dates.DateFormatter('%S')
 
-        
         if type_graph != "dt":
             ax1 = fig_comp.add_subplot(121)
             ax1.set_title('HIM', fontsize=15, fontweight='bold')
