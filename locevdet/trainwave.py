@@ -2,9 +2,6 @@
 
 import numpy as np
 
-from copy import copy
-from typing import Tuple
-
 from obspy import UTCDateTime
 
 from obspy.signal.trigger import trigger_onset
@@ -39,11 +36,16 @@ class Trainwave():
         self.kurtosis_params = kwargs.get('kurtosis_params', None)
         self.kurtosis_data = kwargs.get('kurtosis_data', None)
 
+        # if start picked manually
+        self.start_specific_manual = kwargs.get('start_specific_manually', None)
+
         # Envelope, SNR and trainwave's end detection
         self.snr = kwargs.get('snr', None)
         self.noise_level = kwargs.get('noise_level', None)
         self.all_endtimes_delta = kwargs.get('all_endtimes_delta', None)
         self.end_specific = kwargs.get('end_specific', None)
+        self.form_ratio = kwargs.get('form_ratio', None)
+        self.duration = kwargs.get('duration', None)
 
         # Matlab other variables
         self.matlab_data = kwargs.get('matlab_data', None)
@@ -76,36 +78,28 @@ class Trainwave():
         self.kurtosis_data = kurtosis_data
         return kurtosis_data
 
-    def envelope(self, rolling_max_window:float=0):
-        analytic_signal = hilbert(self.trace_filtered)
+    def envelope(self, trace_type:str='trimmed_filtered', rolling_max_window:float=0):
+        if trace_type == 'trimmed_filtered':
+            analytic_signal = hilbert(self.trace_filtered)
+        elif trace_type == 'trace_filtered':
+            trace = self.trace.copy()
+            freqmin = self.freqmin_interest
+            freqmax = self.freqmax_interest
+            trace_filtered = trace.filter('bandpass', freqmin=freqmin, freqmax=freqmax)
+            analytic_signal = hilbert(trace_filtered)
         envelope = np.abs(analytic_signal)
-        print("hilbert envelope :", envelope.size)
         if rolling_max_window > 0:
             envelope = rolling_max(envelope, rolling_max_window)
         return envelope
     
-    def snr_calculation(self, rolling_max_window:float=0, 
-            time_intervall_inspect:Tuple[float]=[1,10], 
-            window_inspect:float=5):
+    def snr_calculation(self, rolling_max_window:float=0):
+        """ TODO """
+        envelope = self.envelope(trace_type='trimmed_filtered', rolling_max_window=rolling_max_window)
+        envelope_trace = self.envelope(trace_type='trace_filtered', rolling_max_window=rolling_max_window)
 
-        envelope = self.envelope(rolling_max_window)
-
-        delta = self.trace_filtered.stats.delta
-        index_start_global = (self.start_global - self.trace_filtered.stats.starttime) / delta
-        window_inspect_npts = window_inspect / delta
-        npts_intervall_inspect_noise = time_intervall_inspect[0] / delta
-        npts_intervall_inspect_signal = time_intervall_inspect[1] / delta
-
-        end_index_noise_window = int(index_start_global - npts_intervall_inspect_noise)
-        start_index_noise_window = int(end_index_noise_window - window_inspect_npts)
-
-        noise_level = np.mean(envelope[start_index_noise_window : end_index_noise_window])
+        noise_level = np.quantile(envelope_trace, 0.5)
         self.noise_level = noise_level
-
-        start_index_signal_window = int(index_start_global + npts_intervall_inspect_signal)
-        end_index_signal_window = int(start_index_signal_window + window_inspect_npts)
-
-        signal_level = np.mean(envelope[start_index_signal_window : end_index_signal_window])
+        signal_level = np.max(envelope)
 
         snr = signal_level / noise_level
         self.snr = snr
@@ -114,20 +108,18 @@ class Trainwave():
 
     def endtime_detection(self, 
             rolling_max_window:float=0, 
-            time_intervall_inspect:Tuple[float]=[1,10],
+            time_restricted:float=5,
+            time_inspect_startglobal:float=1,
             thr_snr_purcent:float=1.1):
-        
-        envelope = self.envelope(rolling_max_window)
-        print("envelope :", envelope)
-        print("envelope size :",envelope.size)
+        """ TODO """
+        envelope = self.envelope(trace_type='trimmed_filtered', rolling_max_window=rolling_max_window)
+
         delta = self.trace_filtered.stats.delta
         index_start_global = int((self.start_global - self.trace_filtered.stats.starttime) / delta)
-        index_inspect_signal = int(time_intervall_inspect[1] / delta)
+        index_inspect_signal = int(time_inspect_startglobal / delta)
+        thrsedhold_on = np.quantile(envelope[index_start_global - index_inspect_signal : index_start_global + index_inspect_signal], 0.9)
 
         threshold_snr_end = thr_snr_purcent * self.noise_level
-        thrsedhold_on = envelope[index_start_global + index_inspect_signal]
-        print("thrsedhold_on :", thrsedhold_on)
-
         triggersnr_samples_detection = trigger_onset(envelope, thrsedhold_on, threshold_snr_end)
 
         all_endtimes = triggersnr_samples_detection[:,1]
@@ -135,15 +127,38 @@ class Trainwave():
         all_endtimes_utc = [
             self.trace_filtered.stats.starttime + ends
             for ends in all_endtimes_delta
+            if self.trace_filtered.stats.starttime + ends > self.start_global + time_restricted and \
+                 self.trace_filtered.stats.starttime + ends > self.kurtosis_data['start_specific'] + time_restricted
         ]
         self.all_endtimes_delta = all_endtimes_delta
-        print(all_endtimes_utc)
 
-        end_specific = UTCDateTime(all_endtimes_utc[0])
-        print(end_specific)
-        self.end_specific = end_specific
-
+        if len(all_endtimes_utc) != 0:
+            end_specific = UTCDateTime(all_endtimes_utc[0])
+            self.end_specific = end_specific
+        else :
+            end_specific = None
         return all_endtimes_utc, end_specific
+    
+    def form_ratio_and_duration(self, rolling_max_window):
+        if self.end_specific is not None and self.kurtosis_data['start_specific'] is not None:
+            envelope = self.envelope(trace_type='trimmed_filtered', rolling_max_window=rolling_max_window)
+            max_level = np.max(envelope)
+            max_level_index = np.where(envelope == np.max(envelope))
+            times = self.trace_trimmed.times()
+            max_level_time = []
+
+            for index in max_level_index[0]:
+                utc_max_level_time = UTCDateTime(self.trace_filtered.stats.starttime + times[index])
+                if utc_max_level_time > self.kurtosis_data['start_specific'] \
+                    and utc_max_level_time < self.end_specific :
+                    max_level_time = [utc_max_level_time]
+
+            if len(max_level_time) != 0:
+                duration = self.end_specific - self.kurtosis_data['start_specific']
+                start_to_max = self.end_specific - max_level_time[0]
+                self.duration = duration
+                self.form_ratio = start_to_max / duration
+                return start_to_max / duration, duration
 
     def __repr__(self):
         return f"Trainwave{self.trace}"
