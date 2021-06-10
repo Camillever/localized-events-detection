@@ -72,15 +72,35 @@ class EventList(list):
                     if same_starttime < max_time_difference and \
                         trainwave.station.name == matlab_data['station'] :
                         mat = loadmat(matlab_filepath)
-                        ti = matlab_data['starttime'] + mat["wavetrains"]['Tiwp'][0]
-                        
+
+                        all_ti_delta = mat["wavetrains"]['Tiwp']
+                        all_ti = [UTCDateTime(matlab_data['starttime'] + ti) for ti in all_ti_delta]
+
+                        all_td_delta = mat["wavetrains"]['timed']
+                        all_td = [UTCDateTime(matlab_data['starttime'] + ti) for ti in all_td_delta]
+
+                        ti = min(
+                            all_ti,
+                            key=lambda x:abs(x-trainwave.start_global)
+                        )
+                        ti_index = all_ti.index(ti)
+                        td = UTCDateTime(matlab_data['starttime'] + mat["wavetrains"]['timed'][ti_index])
+                        duration = mat["wavetrains"]['duration'][ti_index]
+                        radial = mat["wavetrains"]['r'][ti_index]
+
                         matlab_data['trainwave'] = {
-                            'radial_signal': mat["wavetrains"]['r'][0],
+                            'radial_signal': radial,
                             'initial_time': ti,
+                            'all_initial_times':all_ti,
+                            'central_time': td,
+                            'all_central_times': all_td,
                             'fmin': mat["fmin"],
                             'centralfrequency': mat["wavetrains"]['centralfrequency'][0],
-                            'duration': mat["wavetrains"]['duration'][0]
+                            'duration': duration
                         }
+                        # Careful if ti too far of start_global
+                        if abs(ti - trainwave.start_global) > 15 :
+                            matlab_data = None
                         trainwave.matlab_data = matlab_data
                     else:
                         continue
@@ -93,8 +113,10 @@ class EventList(list):
         type_graph : Type of graphique to plot as     
             - "ti_with_snr" : Initials times (with snr values) of trainwaves determined by
                     kurtosis in function of initials times determined by Stockwell's spectograms
-            - " diff_ti_in_fct_snr" : Difference of initials times determined by kurtosis
-                    and Stockwell's spectograms in function of snr values (for ti by kurtosis)
+            - " snr_in_fct_diff_ti" : Snr values (for ti by kurtosis) in function of difference of 
+                    initials times determined by kurtosis and Stockwell's spectograms
+            - "temporal_snr_diff_ti" : TODO
+
             - "hist_diff_ti" : Histograms of the difference of initials times determined by
                     kurtosis and Stockwell's spectograms
              - "dt" : delta time between initials times of trainwaves between the two stations.
@@ -128,14 +150,14 @@ class EventList(list):
                     start_specific = trainwave.kurtosis_data["start_specific"]
                     if trainwave.station.name == 'HIM':
                         list_HIM_ti.append(ti)
-                        list_HIM_starts_specific.append(UTCDateTime(start_specific)) # ELSE : Nan 
+                        list_HIM_starts_specific.append(UTCDateTime(start_specific))
                         diff_ti_HIM.append(
                             np.abs(ti - start_specific))
                         list_HIM_nsr.append(trainwave.snr)
 
                     elif trainwave.station.name == 'FRE':
                         list_FRE_ti.append(ti)
-                        list_FRE_starts_specific.append(UTCDateTime(start_specific))  ## ELSE : Nan
+                        list_FRE_starts_specific.append(UTCDateTime(start_specific))
                         diff_ti_FRE.append(
                             np.abs(ti - start_specific))
                         list_FRE_nsr.append(trainwave.snr)
@@ -161,7 +183,8 @@ class EventList(list):
         
         if type_graph == "ti_with_snr":
             
-            him_sc = ax1.scatter(list_HIM_ti_date64, list_HIM_starts_specific_date64)
+            him_sc = ax1.scatter(list_HIM_ti_date64, list_HIM_starts_specific_date64, c=list_HIM_nsr, cmap=plt.cm.get_cmap('RdYlGn'))
+            fig_comp.colorbar(him_sc, ax=ax1, label='SNR')
 
             # Linear Regression
             X_HIM, Y_HIM, Y_HIM_pred, modeleRegHIM = linear_regression_on_dates(list_HIM_ti_date64, list_HIM_starts_specific_date64)
@@ -184,14 +207,23 @@ class EventList(list):
             ax1.set_ylabel('Débuts de trains d\'ondes par Kurtosis')
             ax1.xaxis.set_major_formatter(myFmt)
             ax1.yaxis.set_major_formatter(myFmt)
-
-            # plt.colorbar(him_sc)
         
         elif type_graph == "hist_diff_ti":
             bins = np.arange(0, np.max(diff_ti_HIM), 0.5)
             ax1.hist(diff_ti_HIM, bins=bins, alpha=0.5)
-            ax1.set_xlabel('abs( ti - start_specific)     (secondes)')
             ax1.set_ylabel('Nombre de trains d\'ondes')
+            ax1.grid(True)
+
+        elif type_graph == "snr_in_fct_diff_ti":
+            ax1.scatter(diff_ti_HIM, list_HIM_nsr)
+            ax1.set_xlabel('abs( ti - start_specific)     (secondes)')
+            ax1.grid(True)
+        
+        elif type_graph == "temporal_snr_diff_ti":
+            him = ax1.scatter(diff_ti_HIM, list_HIM_ti_date64, c=list_HIM_nsr, cmap=plt.cm.get_cmap('RdYlGn'))
+            fig_comp.colorbar(him, ax=ax1, label='SNR')
+            ax1.yaxis.set_major_formatter(myFmt)
+            ax1.set_xlabel('abs( ti - start_specific)     (secondes)')
             ax1.grid(True)
         
         elif type_graph == "dt":
@@ -220,7 +252,8 @@ class EventList(list):
             ax2.set_title('FRE', fontsize=15, fontweight='bold')
 
         if type_graph == "ti_with_snr":
-            fre_sc = ax2.scatter(list_FRE_ti_date64, list_FRE_starts_specific_date64)
+            fre_sc = ax2.scatter(list_FRE_ti_date64, list_FRE_starts_specific_date64, c=list_FRE_nsr, cmap=plt.cm.get_cmap('RdYlGn'))
+            fig_comp.colorbar(fre_sc, ax=ax2, label='SNR')
 
             # Linear Regression
             X_FRE, Y_FRE, Y_FRE_pred, modeleRegFRE = linear_regression_on_dates(list_FRE_ti_date64, list_FRE_starts_specific_date64)
@@ -246,10 +279,21 @@ class EventList(list):
         elif type_graph == "hist_diff_ti":
             bins = np.arange(0, np.max(diff_ti_FRE), 0.5)
             ax2.hist(diff_ti_FRE, bins=bins, alpha=0.5)
-            ax2.set_xlabel('abs( ti - start_specific)     (secondes)')
             ax2.set_ylabel('Nombre de trains d\'ondes')
+            # ax2.set_xlim(right=30)
             ax2.grid(True)
-            # fig_comp.colorbar(fre_sc)
+        
+        elif type_graph == "snr_in_fct_diff_ti":
+            ax2.scatter(diff_ti_FRE, list_FRE_nsr)
+            ax2.set_xlabel('abs( ti - start_specific)     (secondes)')
+            ax2.grid(True)
+
+        elif type_graph == "temporal_snr_diff_ti":
+            fre = ax2.scatter(diff_ti_FRE, list_FRE_ti_date64, c=list_FRE_nsr, cmap=plt.cm.get_cmap('RdYlGn'))
+            fig_comp.colorbar(fre, ax=ax2, label='SNR')
+            ax2.yaxis.set_major_formatter(myFmt)
+            ax2.set_xlabel('abs( ti - start_specific)     (secondes)')
+            ax2.grid(True)
 
         plt.gcf().autofmt_xdate()
         plt.tight_layout()
@@ -260,10 +304,12 @@ class EventList(list):
         if save_fig_path is not None:
             if type_graph == "ti_with_snr":
                 figname = "compare_ti_01-02-2020_11-02-2020.png"
-            elif type_graph == "diff_ti_in_fct_snr":
-                figname = "diff_ti_fct_snr_01-02-2020_11-02-2020.png"
+            elif type_graph == "snr_in_fct_diff_ti":
+                figname = "snr_in_fct_diff_ti_01-02-2020_11-02-2020.png"
             elif type_graph == "hist_diff_ti":
                 figname = "hist_diff_ti_01-02-2020_11-02-2020.png"
+            elif type_graph == "temporal_snr_diff_ti":
+                figname = "temporal_snr_diff_ti_01-02-2020_11-02-2020.png"
             elif type_graph == "dt":
                 figname = "dt_01-02-2020_11-02-2020.png"
             fig_save_path = os.path.join(save_fig_path, figname)
