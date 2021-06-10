@@ -1,7 +1,6 @@
 """ Module for plotting waveforms """
 
 import os
-import numpy as np
 import matplotlib.pyplot as plt
 plt.rcParams.update({'figure.max_open_warning': 0}) # To avoid warning from matplotlib mermory
 
@@ -9,11 +8,11 @@ from typing import List
 
 from matplotlib.widgets import RangeSlider, Slider
 
-class RangeSlider(RangeSlider):
-
-    def __init__(self, ax, label, valmin, valmax, **kwargs):
-        self.val = (valmin, valmax)
-        super().__init__(ax, label, valmin, valmax, **kwargs)
+# class RangeSlider(RangeSlider):
+#     """ Redfine RangeSlider Class to fix initial parameters on slider"""
+#     def __init__(self, ax, label, valmin, valmax, **kwargs):
+#         self.val = (valmin, valmax)
+#         super().__init__(ax, label, valmin, valmax, **kwargs)
 
 from obspy import read
 from tqdm import tqdm
@@ -301,43 +300,6 @@ def captures_per_event(mseeds_path, save_fig_path:str=None):
             fig.savefig(fig_save_path, bbox_inches='tight')
 
 
-
-
-
-#                 if filename.startswith("PF_RER") or filename.startswith("PF_NSR") or filename.startswith("PF_TTR") or filename.startswith("PF_PER"):
-#                     trace = seismogram[0]
-#                 elif filename.startswith("G_RER") or filename.startswith("PF_TTR"):
-#                     trace = seismogram[0]
-#                     trace = trace.filter('bandpass', freqmin=1.5, freqmax=20)  # High-pass filter for these stations
-#                 else:
-#                     trace = seismogram[2]
-
-#                 dt = trace.stats.starttime.timestamp
-#                 t = np.linspace(trace.stats.starttime.timestamp - dt,
-#                                         trace.stats.endtime.timestamp - dt,
-#                                         trace.stats.npts)
-
-#                 ax = fig.add_subplot(len(networks_stations), 1, len(filenames_event))
-
-#                 ax.plot(trace.times(), trace.data)
-#                 ax.set_title(filename.split('_')[0]+'_'+filename.split('_')[1], loc='right', fontweight ="bold")
-#                 plt.tight_layout()
-
-#         fig.savefig(os.path.join(folder_out, start_name+'_processed.png'))
-# #         plt.show()
-
-# networks_stations = ['PF_FRE', 'PF_HIM', 'PF_NSR', 'PF_PER', 'PF_TTR', 'G_RER']
-# folder_path = os.path.join(path, 'mseed_RESIF')
-# folder_out_per_event = os.path.join(folder_path, 'captures', 'per_event')
-
-# all_seismogram = [
-#         filename for filename in os.listdir(folder_path)
-#         if filename.startswith("PF_") or filename.startswith("G_RER")
-#     ]
-
-# # captures_per_event(folder_path, folder_out_per_event, all_seismogram, networks_stations)
-
-
 # # Par événement (et avec spectogrammes)
 # import math
 # from scipy import signal
@@ -446,7 +408,6 @@ def captures_per_event(mseeds_path, save_fig_path:str=None):
 # # captures_per_event_spectogramms(folder_path, folder_out_per_event_spectograms, all_seismogram, networks_stations)
 
 
-
 def demo_con_style(ax, connectionstyle, colorborder):
     x1, y1 = 0.3, 0.2
     x2, y2 = 0.8, 0.6
@@ -460,190 +421,3 @@ def demo_con_style(ax, connectionstyle, colorborder):
     ax.text(.05, .95, connectionstyle.replace(",", ",\n"),
             transform=ax.transAxes, ha="left", va="top",
             bbox=dict(boxstyle="round", fc="w", color=colorborder))
-    
-
-
-
-
-
-
-# from locevdet.eventlist import EventList
-
-# from obspy.core import Stream
-
-# def plot_stalta_per_event(eventlist:EventList, save_fig_path:str=None, show:bool=True):
-#     """ TODO """
-#     for event in eventlist:
-#         utc_start_global = event.start_global
-
-#         fig_stalta = plt.figure(f"Sta-Lta _{str(utc_start_global)}")
-#         if save_fig_path is not None:
-#             fig_stalta.set_size_inches((20, 10), forward=False)
-#         list_stations = event.stations
-#         nb_stations = len(list_stations)
-
-#         ax = ['ax' + str(nb) for nb in range(nb_stations)]
-#         num = -1
-
-#         for _, trainwave in event.trainwaves.items():
-#             num +=1
-
-#             ax[num] = fig_stalta.add_subplot(nb_stations, 1, num+1)
-#             ax[num].set_title(f'{trainwave.trace.stats.station}', fontsize=15, fontweight='bold')
-#             ax[num].plot(trainwave.trace.times(), trainwave.trace.data, color='black', linewidth=1.1)
-            
-#             ymin1, ymax1 = ax[num].get_ylim()
-#             start_global = utc_start_global - trainwave.trace.stats.starttime
-#             start_global_line = ax[num].axvline(start_global, color='darkgreen', linewidth=2.5)
-
-#         title = (
-#             f" Début global d\'un événement à : {utc_start_global}"
-#         )
-#         fig_stalta.suptitle(title, fontsize=18, fontweight='bold')
-#         handles = [start_global_line]
-#         labels = [" Début global de l'événement détecté par STA-LTA "]
-#         fig_stalta.legend(
-#                     handles, 
-#                     labels, 
-#                     loc='upper right', 
-#                     fontsize=16, 
-#                     fancybox=True, 
-#                     shadow=True, 
-#                     bbox_to_anchor=(1.1, 1)
-#                     )
-#         plt.tight_layout()
-#         if show is True:
-#             fig_stalta.show()
-        
-#         if save_fig_path is not None:
-#             figname = f"event_{clean_utc_str(utc_start_global)}.png"
-#             fig_save_path = os.path.join(save_fig_path, figname)
-#             fig_stalta.savefig(fig_save_path, bbox_inches='tight')
-
-# def plot_kurtosis_per_event(eventlist:EventList,
-#         threshold_on:float, window:float, 
-#         freqmin:float, freqmax:float,
-#         save_fig_path:str=None, show:bool=True, **kwargs):
-#     """ TODO """
-#     for event in eventlist:
-#         utc_start_global = event.start_global
-
-#         fig_kurt = plt.figure(f"Kurtosis _{str(utc_start_global)}")
-#         if save_fig_path is not None:
-#             fig_kurt.set_size_inches((20, 10), forward=False)
-#         list_stations = event.stations
-#         nb_stations = len(list_stations)
-
-#         ax = ['ax' + str(nb) for nb in range(2*nb_stations)]
-#         line = ['line' + str(nb) for nb in range(2*nb_stations)]
-#         vlines = ['vline' + str(nb) for nb in range(2*nb_stations)]
-#         thr_line = ['thr_line' + str(nb) for nb in range(2*nb_stations)]
-
-#         for num, (_, trainwave) in enumerate(event.trainwaves.items()):
-
-#             trace_trim = trainwave.trace_trimmed
-#             trace_filtered = trainwave.trace_filtered
-            
-#             start_name_trace = clean_utc_str(trace_filtered.stats.starttime)
-#             end_name_trace = clean_utc_str(trace_filtered.stats.endtime)
-
-#             ## SUBPLOT SEISMOGRAM ##
-#             ax[num] = fig_kurt.add_subplot(2, nb_stations, num+1)
-#             ax[num].set_title(f'{trainwave.station.name}', fontsize=15, fontweight='bold')
-#             sismo_non_filt = ax[num].plot(trace_filtered.times(), trace_trim.data, color='grey', linewidth=1.1)
-#             line[num] = ax[num].plot(trace_filtered.times(), trace_filtered.data, color='black', linewidth=1.1)
-            
-#             # Start global of trainwave
-#             ymin1, ymax1 = ax[num].get_ylim()
-#             start_global_line1 = ax[num].axvline(trainwave.pre_trigger, color='darkgreen', linewidth=3)
-
-#             ## SUBPLOT KURTOSIS ##
-#             ax[nb_stations + num] = fig_kurt.add_subplot(2, nb_stations, nb_stations+num+1, sharex=ax[num])
-#             ax[nb_stations + num].set_xlabel('temps (secondes)')
-#             kurt_norm = trainwave.kurtosis_data['kurtosis_matrix']
-#             line[nb_stations + num] = ax[nb_stations + num].plot(trace_filtered.times(), kurt_norm, linewidth=1.2)
-#             ax[nb_stations + num].set_ylim(top=1, bottom=0)
-#             xmin, xmax = ax[nb_stations + num].get_xlim()
-
-#             # Start global of trainwave
-#             start_global_line2 = ax[nb_stations + num].axvline(trainwave.pre_trigger, 0, 1, color='darkgreen', linewidth=3)
-
-#             # Kurtosis threshold and start times triggered
-#             all_starttimes_delta = trainwave.kurtosis_data['all_starttimes_delta']
-#             vlines[num] = ax[num].vlines(all_starttimes_delta, ymin1, ymax1, color='darkorange', linewidth=2.3)
-#             vlines[nb_stations + num] = ax[nb_stations + num].vlines(
-#                 all_starttimes_delta, 
-#                 0, 
-#                 1, 
-#                 color='darkorange', 
-#                 linewidth=2.3
-#             )
-
-#             # Choosen start_specific
-#             start_specific = trainwave.kurtosis_data['start_specific'] - trace_filtered.stats.starttime
-#             start_specific_line = ax[num].vlines(
-#                 start_specific, 
-#                 ymin1, 
-#                 ymax1, 
-#                 color='darkred', 
-#                 linewidth=2.5
-#             )
-#             ax[nb_stations + num].vlines(
-#                 start_specific, 
-#                 0, 
-#                 1, 
-#                 color='darkred', 
-#                 linewidth=2.5
-#             )
-
-#             max_kurtosis = np.max(trainwave.kurtosis_data['kurtosis_matrix'])
-            
-#             thr_line[nb_stations + num] = ax[nb_stations + num].axhline(
-#                 threshold_on * max_kurtosis, 
-#                 xmin, xmax, 
-#                 color='red',
-#                 linestyle='--'
-#             )
-
-#         title = (
-#             f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}\n {freqmin}-{freqmax}Hz"
-#             f" / Fenêtre glissante de {window}s / Seuil à {threshold_on} %"
-#         )
-#         fig_kurt.suptitle(title, fontsize=18)
-#         fig_kurt.subplots_adjust(top=5)
-
-#         handles = [
-#             line[0][0], 
-#             sismo_non_filt[0], 
-#             line[nb_stations][0], 
-#             start_global_line2, 
-#             vlines[0], 
-#             start_specific_line
-#             ]
-
-#         labels = [
-#             'Sismogramme filtré',
-#             'Sismogramme non filtré',
-#             'Kurtosis',  
-#             'Début global de l\événement détecté par STA-LTA', 
-#             'Débuts potentiels du train d\'onde détectés par Kurtosis', 
-#             'Début du train d\'onde détecté par Kurtosis '
-#             ]
-#         fig_kurt.legend(
-#             handles, 
-#             labels, 
-#             loc='upper right', 
-#             fontsize=10, 
-#             fancybox=True, 
-#             shadow=True, 
-#             bbox_to_anchor=(1.1, 1.1)
-#             )
-#         plt.tight_layout()
-
-#         if show is True:
-#             fig_kurt.show()
-
-#         if save_fig_path is not None:
-#             figname = f"event_{clean_utc_str(utc_start_global)}.png"
-#             fig_save_path = os.path.join(save_fig_path, figname)
-#             fig_kurt.savefig(fig_save_path, bbox_inches='tight')
