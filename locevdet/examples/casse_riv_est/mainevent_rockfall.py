@@ -7,7 +7,7 @@ from obspy import UTCDateTime
 from scipy.io import savemat
 
 from locevdet.trainwaves_arrivals.sta_lta import stalta_detect_events
-from locevdet.utils import get_info_from_mseedname, clean_utc_str
+from locevdet.utils import get_info_from_mseedname
 
 # Paths of seismograms
 mseeds_path = os.path.join("seismograms", "01-02-2020_11-02-2020", "rockfall", "average_strong")
@@ -84,10 +84,10 @@ from locevdet.eventlist import EventList
 def starts_save_to_mat(eventlist:EventList, type_start, folder_save:str):
     number_events = len(mainevents_list)
     mainevents = np.zeros((number_events, len(order_stations)), dtype=object)
-    for i, event in enumerate(eventlist):
+    for _, event in enumerate(eventlist):
         event_row = ['None', 'None', 'None', 'None', 'None', 'None']
         for number, station in enumerate(order_stations) :
-            for _, trainwave in event.trainwaves.items():
+            for i, trainwave in event.trainwaves.items():
                 
                 if trainwave.station.name == station:
                     start = None
