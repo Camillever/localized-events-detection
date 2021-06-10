@@ -6,6 +6,8 @@ import json
 from typing import List
 
 import matplotlib.pyplot as plt
+from matplotlib.artist import Artist
+from matplotlib.backend_bases import MouseButton
 
 from obspy.core import Stream
 from obspy.signal.trigger import classic_sta_lta
@@ -71,7 +73,7 @@ class Event():
                 trace = trainwave.trace
                 times = trace.times()
                 freqmin, freqmax = 0.5, 50
-                ax1 = fig.add_subplot(nb_stations, 2, (num*nb_stations)+1)
+                ax1 = fig.add_subplot(2, nb_stations, num+1)
             else :
                 trace_trim = trainwave.trace_trimmed
                 trace_filtered = trainwave.trace_filtered
@@ -110,7 +112,7 @@ class Event():
                 nlta = int(trainwave.nlta_time*trace.stats.sampling_rate)
                 cft = classic_sta_lta(trace.data, nsta, nlta)
 
-                ax2 = fig.add_subplot(nb_stations, 2, (num*nb_stations)+2)
+                ax2 = fig.add_subplot(2, nb_stations, (num+nb_stations)+1)
                 ax2.plot(times, cft, color='blue', alpha=0.3, linewidth=1.1, label='STA-LTA classique')
                 ymin2, ymax2 = ax2.get_ylim()
                 ax2.axvline(startglobal, ymin2, ymax2, color='darkgreen', linewidth=2.5, label=label_startglobal)
@@ -163,24 +165,59 @@ class Event():
                 ax1.plot(times, trace.data, color='grey', linewidth=0.5, label=label_tracetrim)
 
                 rolling_max_window = kwargs.get('rolling_max_window', 1)
-                envelope = trainwave.envelope(rolling_max_window)
-                ax1.plot(times, envelope, color='darkblue', linewidth=2.5, label='Enveloppe du signal')
+                envelope = trainwave.envelope(trace_type='trimmed_filtered', rolling_max_window=rolling_max_window)
+                ax1.plot(times, envelope, color='orange', linewidth=2, label='Enveloppe du signal')
                 ymin1, ymax1 = ax1.get_ylim()
 
-                snr_title = format(trainwave.snr, '.2e')
+                snr_title = ("{:.2f}".format(trainwave.snr))
                 demo_con_style(ax1, f"snr : {snr_title}", colorborder='black')
 
-                endspecific = trainwave.end_specific - trace.stats.starttime
-                ax1.axvline(endspecific, ymin1, ymax1, color='darkred', linewidth=3)
+                start_specific = trainwave.kurtosis_data['start_specific'] - trace.stats.starttime
+                label_startspecific = "Début précis du train d\'onde détecté par Kurtosis"
+                ax1.axvline(start_specific, color='darkred', alpha=0.5, linewidth=3, label=label_startspecific)
 
-                thr_snr_purcent = kwargs.get('rolling_max_window', 1.1)
+                if trainwave.end_specific is not None :
+                    endspecific = trainwave.end_specific - trace.stats.starttime
+                    ax1.axvline(endspecific, color='darkblue', alpha=0.5, linewidth=3, label="Détection de la fin du train d\'onde")
+
+                if trainwave.matlab_data is not None :
+                    ti = trainwave.matlab_data['trainwave']['initial_time']
+                    ti_delta = ti - trace.stats.starttime
+                    label_ti = "Début précis du train d\'onde détecté par Méthode de Stockwell"
+                    ax1.axvline(ti_delta, color='pink', linewidth=3, alpha=0.8, label=label_ti)
+
+                thr_snr = kwargs.get('rolling_max_window', 1.1)
                 noise_level = trainwave.noise_level
-                threshold_snr_end = thr_snr_purcent * noise_level
-                ax1.axhline(threshold_snr_end, 
-                xmin1, xmax1,
+                ax1.axhline(noise_level, xmin1, xmax1,
+                color='purple',
+                linestyle='--', 
+                linewidth=1,
+                label="Niveau de bruit"
+                )
+
+                signal_level = noise_level*trainwave.snr
+                ax1.axhline(signal_level, 
+                color='purple',
+                linestyle='--', 
+                linewidth=1.2, 
+                label="Niveau de signal"
+                )
+
+                import numpy as np
+                delta = trainwave.trace_filtered.stats.delta
+                index_start_global = int((trainwave.start_global - trainwave.trace_filtered.stats.starttime) / delta)
+                threshold_on = np.mean(envelope[index_start_global - 1 : index_start_global + 1])
+                ax1.axhline(threshold_on,
                 color='red',
                 linestyle='--', 
-                linewidth=1.2
+                linewidth=1.5
+                )
+
+                threshold_snr_end = thr_snr * noise_level
+                ax1.axhline(threshold_snr_end,
+                color='darkblue',
+                linestyle='--', 
+                linewidth=1.5
                 )
 
         title = (
@@ -191,7 +228,7 @@ class Event():
 
         
         handles_, labels_ = ax1.get_legend_handles_labels()
-        if ax2:
+        if type_graph != 'envelope':
             handles2_, labels2_ = ax2.get_legend_handles_labels()
             handles_ += handles2_
             labels_ += labels2_
@@ -216,7 +253,98 @@ class Event():
             fig_save_path = os.path.join(save_fig_path, figname)
             fig.savefig(fig_save_path, bbox_inches='tight')
 
+    def pick_arrivals_manually(self):
+        plt.close("all")
 
+        fig = plt.figure("pick_arrivals_per_event")
+        nb_stations = len(self.stations)
+        ax = ["ax" + str(i) for i in range(nb_stations)]
+        axvline = ["axvline" + str(i) for i in range(nb_stations)]
+        for num, (_, trainwave) in enumerate(self.trainwaves.items()):
+            freqmin = trainwave.freqmin_interest
+            freqmax = trainwave.freqmax_interest
+
+            ax[num] = fig.add_subplot(nb_stations, 1, num+1)
+            Artist.set_picker(ax[num], True)
+            ax_title = f'{trainwave.station.name} {freqmin}-{freqmax}Hz'
+            ax[num].set_title(ax_title, fontsize=15, fontweight='bold')
+
+            trace_filtered = trainwave.trace_filtered
+            ax[num].plot(trace_filtered.times(), trace_filtered)
+
+            start_name_event = clean_utc_str(trace_filtered.stats.starttime)
+            end_name_event = clean_utc_str(trace_filtered.stats.endtime)
+
+            label_startglobal = "Début global de l\'événement détecté par STA-LTA"
+            startglobal = trainwave.start_global - trace_filtered.stats.starttime
+            ax[num].axvline(startglobal, color='darkgreen', linewidth=2.5, label=label_startglobal)
+
+            start_specific = trainwave.kurtosis_data['start_specific'] - trace_filtered.stats.starttime
+            label_startspecific = "Début précis du train d\'onde détecté par Kurtosis"
+            ax[num].axvline(start_specific, color='darkred', alpha=0.5, linewidth=3, label=label_startspecific)
+            
+            axvline[num] = ax[num].axvline(x=0., color="red", linestyle = 'dashed')
+
+            if trainwave.matlab_data is not None :
+                all_ti = trainwave.matlab_data['trainwave']['all_initial_times']
+                # for ti in all_ti:
+                #     tis_delta = ti - trace_filtered.stats.starttime
+                #     ax[num].axvline(tis_delta, color='purple', linewidth=3, alpha=0.8)
+                ax[num].vlines(all_ti, color='purple')
+                
+                all_td = trainwave.matlab_data['trainwave']['all_central_times']
+                # for td in all_td:
+                #     tds_delta = td - trace_filtered.stats.starttime
+                #     ax[num].axvline(tds_delta, color='blue', linewidth=3, alpha=0.8)
+                ax[num].vlines(all_td, color='blue')
+
+
+                if trainwave.matlab_data['trainwave']['initial_time'] != 'None':
+                    ti = trainwave.matlab_data['trainwave']['initial_time']
+                    ti_delta = ti - trace_filtered.stats.starttime
+                    label_ti = "Début précis du train d\'onde détecté par Méthode de Stockwell"
+                    ax[num].axvline(ti_delta, color='pink', linewidth=3, alpha=0.8, label=label_ti)
+
+
+        
+        def on_move(event):
+            for n, axe in enumerate(ax):
+                if axe == event.inaxes:
+                    axvline[n].set_data([event.xdata, event.xdata], [0, 1])
+                    plt.draw()                    
+                
+        def on_pick(event):
+            if event.button is MouseButton.LEFT:
+                for n, axe in enumerate(ax):
+                # For infomation, print which axes the click was in
+                    if axe == event.inaxes:
+                        for num, (_, trainwave) in enumerate(self.trainwaves.items()):
+                            if num == n:
+                                utc_starttime = trainwave.trace_filtered.stats.starttime
+                                print("utc pick :", utc_starttime + event.xdata)
+                                print(f"{trainwave.station.name} - {trainwave.start_specific_manual}")
+                                trainwave.start_specific_manual = utc_starttime + event.xdata
+                                print(f"{trainwave.start_specific_manual}")
+        plt.connect('motion_notify_event', on_move)
+        fig.canvas.mpl_connect('button_press_event', on_pick)
+        
+        title = (f"Fenêtre de visualisation : {start_name_event} - {end_name_event}")
+        fig.suptitle(title, fontsize=18)
+        plt.tight_layout()
+        handles_, labels_ = ax[0].get_legend_handles_labels()
+        by_label = dict(zip(labels_, handles_))
+        fig.legend(
+            by_label.values(), 
+            by_label.keys(),
+            loc='upper right',
+            fontsize=10,
+            fancybox=True,
+            shadow=True,
+            bbox_to_anchor=(1.1, 1.1)
+            )
+
+        plt.show()
+        
     def to_json(self):
         return {
             'start_global': str(self.start_global),
