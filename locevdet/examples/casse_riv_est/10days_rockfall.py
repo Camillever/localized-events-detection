@@ -3,7 +3,6 @@
     - Determination of specific starts of trainwaves """
 
 import os
-import pickle
 
 from locevdet.trainwaves_arrivals.sta_lta import stalta_detect_events
 from locevdet.trainwaves_arrivals.kurtosis_test import kurtosistest_for_all_seismograms
@@ -76,7 +75,6 @@ event_list.set_matlab_data(folder_matlab_path, max_time_difference=2)
 #     win=win
 # )
 
-
 # Extraction of specific starts of trainwaves
 save_hist_path = os.path.join('captures', '01-02-2020_11-02-2020', 'rockfall')
 ###
@@ -99,35 +97,40 @@ for event in event_list:
 # Plots
 ## Per event
 save_kurt_fig_path = os.path.join('captures', '01-02-2020_11-02-2020', 'rockfall', 'kurtosis')
-for event in event_list:
-    event.plot(type_graph='kurtosis', save_fig_path=save_kurt_fig_path, show=False, **config_kurtosis)
+# for event in event_list:
+#     event.plot(type_graph='kurtosis', save_fig_path=save_kurt_fig_path, show=False, **config_kurtosis)
 
 # ################################### ENVELOPE AND SNR #############################################
 config_envelope={
-    "rolling_max_window" : 1,          # in seconds
+    "rolling_max_window" : 4,          # in seconds
     "thr_snr_purcent" : 1.1,           # 1 = 100%
-    "time_intervall_inspect" : [1,10], # in seconds
-    "window_inspect" : 5               # in seconds
+    "time_restricted" : 5,             # in seconds
+    "time_inspect_startglobal" : 1               # in seconds
 }
-# # Calculation of the snr
-# for event in event_list:
-#     for _, trainwave in event.trainwaves.items():
-#         trainwave.snr_calculation(rolling_max_window=config_envelope['rolling_max_window'],
-#             time_intervall_inspect=config_envelope['time_intervall_inspect'],
-#             window_inspect=config_envelope['window_inspect'])
+# Calculation of the snr
+for event in event_list:
+    for _, trainwave in event.trainwaves.items():
+        trainwave.snr_calculation(rolling_max_window=config_envelope['rolling_max_window'])
         
-# # Determination of ends of trainwaves
-# for event in event_list:
-#     for _, trainwave in event.trainwaves.items():
-#         trainwave.endtime_detection(rolling_max_window=config_envelope['rolling_max_window'],
-#             time_intervall_inspect=config_envelope['time_intervall_inspect'],
-#             thr_snr_purcent=config_envelope['thr_snr_purcent'])
+# Determination of ends of trainwaves
+for event in event_list:
+    for _, trainwave in event.trainwaves.items():
+        trainwave.endtime_detection(rolling_max_window=config_envelope['rolling_max_window'],
+            time_restricted=config_envelope['time_restricted'],
+            time_inspect_startglobal=config_envelope['time_inspect_startglobal'],
+            thr_snr_purcent=config_envelope['thr_snr_purcent'])
 
 # Plots
 save_envelope_fig_path = os.path.join('captures', '01-02-2020_11-02-2020', 'rockfall', 'envelope')
-# for event in event_list:
-#     event.plot(type_graph='envelope', save_fig_path=save_envelope_fig_path, show=False, **config_envelope)
+for event in event_list:
+    event.plot(type_graph='envelope', save_fig_path=save_envelope_fig_path, show=False, **config_envelope)
 
+
+# Save form ratio
+for event in event_list:
+    for _, trainwave in event.trainwaves.items():
+        trainwave.form_ratio_and_duration(rolling_max_window=config_envelope['rolling_max_window'])
+        print(trainwave.form_ratio, trainwave.duration)
 # ################################## SAVE EVENLIST ##################################################
 # Save to pickle format
 # dictname = 'eventlist_01-02-2020_11-02-2020.pkl'
@@ -155,8 +158,12 @@ event_list.plots_time_compare_HIM_FRE(
     show=False
 )
 
-# # " diff_ti_in_fct_snr"
-
+# # "snr_in_fct_diff_ti"
+event_list.plots_time_compare_HIM_FRE(
+    type_graph="snr_in_fct_diff_ti", 
+    save_fig_path=save_compare_fig_path, 
+    show=False
+)
 
 # "hist_diff_ti"
 event_list.plots_time_compare_HIM_FRE(
@@ -168,6 +175,13 @@ event_list.plots_time_compare_HIM_FRE(
 # "dt"
 event_list.plots_time_compare_HIM_FRE(
     type_graph="dt", 
+    save_fig_path=save_compare_fig_path, 
+    show=False
+)
+
+# "temporal_snr_diff_ti"
+event_list.plots_time_compare_HIM_FRE(
+    type_graph="temporal_snr_diff_ti", 
     save_fig_path=save_compare_fig_path, 
     show=False
 )
