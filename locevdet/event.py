@@ -33,7 +33,7 @@ class Event():
             self.trainwaves[station] = Trainwave(trace, station, self.start_global)
 
 
-    def plot(self, type_graph:str='stalta', 
+    def plot(self, type_graph:str='stalta', seismograms_type:str='discontinuous',
             save_fig_path:str=None, show:bool=False, **kwargs):
         """
         Plots the given type of graphic
@@ -69,7 +69,7 @@ class Event():
 
         nb_stations = len(self.stations)
         for num, (_, trainwave) in enumerate(self.trainwaves.items()):
-            if type_graph == 'stalta':
+            if type_graph == 'stalta' and seismograms_type == 'discontinuous':
                 trace = trainwave.trace
                 times = trace.times()
                 freqmin, freqmax = 0.5, 50
@@ -85,6 +85,10 @@ class Event():
 
                 if type_graph == 'envelope':
                     ax1 = fig.add_subplot(nb_stations, 1, num+1)
+                
+                elif type_graph == 'stalta' and seismograms_type == 'continuous':
+                    freqmin, freqmax = 0.5, 50
+                    ax1 = fig.add_subplot(2, nb_stations, num+1)
                 else:
                     ax1 = fig.add_subplot(2, nb_stations, num+1)
 
