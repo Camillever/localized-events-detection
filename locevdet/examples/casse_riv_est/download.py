@@ -15,9 +15,9 @@ my_process_waveforms = \
     lambda waveforms: standard_process_waveforms(waveforms, apodisation, "VEL", pre_filt)
 
 
-
+##################################################################################################
 ################################  01-02-2020_11-02-2020  #########################################
-# ROCKFALL
+# ROCKFALL - DISCONTINUATED
 
 ## All magnitudes 
 # mseeds_all_magnit_path = os.path.join("seismograms", "01-02-2020_11-02-2020", "rockfall", "all_magnitude")
@@ -80,11 +80,45 @@ my_process_waveforms = \
 #     process_waveforms=my_process_waveforms
 # )
 
+# CONTINUOUS
+start_time_continuous = UTCDateTime("2020-02-01T00:00:00.00")
+end_time_continuous = UTCDateTime("2020-02-11T00:00:00.00")
+save_path_continuous = os.path.join("seismograms", "01-02-2020_11-02-2020", "continuous")
+
+download_from_stations(
+    CLIENT,
+    network="PF",
+    stations=["FRE", "HIM", "PER"],
+    events_times=[(start_time_continuous, end_time_continuous)],
+    save_path=save_path_continuous,
+    process_waveforms=my_process_waveforms
+)
+
+download_from_stations(
+    CLIENT,
+    network="G",
+    stations=["RER"],
+    events_times=[(start_time_continuous, end_time_continuous)],
+    save_path=save_path_continuous,
+    process_waveforms=my_process_waveforms
+)
+
+nsr_starttime = UTCDateTime("2020-02-07T10:00:00.00")
+download_from_stations(
+    CLIENT,
+    network="PF",
+    stations=["NSR"],
+    events_times=[(nsr_starttime, end_time_continuous)],
+    save_path=save_path_continuous,
+    process_waveforms=my_process_waveforms
+)
+
+
 # VOLCANO-TECTONICS Events
-csv_sommital_events =  \
-    os.path.join("events_csv", "volcano_tectonic_01-02-2020_11-02-2020_MC3_dump_bulletin.csv")
-volcanotectonic_events_times = read_events_times_from_csv(csv_sommital_events, time_offset=(35, 65))
-mseeds_volcanotectonic_path = os.path.join("seismograms", "01-02-2020_11-02-2020", "volcanotectonic")
+# csv_sommital_events =  \
+#     os.path.join("events_csv", "volcano_tectonic_01-02-2020_11-02-2020_MC3_dump_bulletin.csv")
+# volcanotectonic_events_times = read_events_times_from_csv(csv_sommital_events, time_offset=(35, 65))
+# mseeds_volcanotectonic_path = os.path.join("seismograms", "01-02-2020_11-02-2020", "volcanotectonic")
 # download_from_stations(
 #     CLIENT,
 #     network="PF",
@@ -94,15 +128,15 @@ mseeds_volcanotectonic_path = os.path.join("seismograms", "01-02-2020_11-02-2020
 #     process_waveforms=my_process_waveforms
 # )
 
-download_from_stations(
-    CLIENT,
-    network="G",
-    stations=["RER"],
-    events_times=volcanotectonic_events_times,
-    save_path=mseeds_volcanotectonic_path,
-    process_waveforms=my_process_waveforms,
-    channel="BH*"
-)
+# download_from_stations(
+#     CLIENT,
+#     network="G",
+#     stations=["RER"],
+#     events_times=volcanotectonic_events_times,
+#     save_path=mseeds_volcanotectonic_path,
+#     process_waveforms=my_process_waveforms,
+#     channel="BH*"
+# )
 
 
 # # LOCAL SEISMS events
