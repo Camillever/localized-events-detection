@@ -154,3 +154,19 @@ def linear_regression_on_dates(X, Y):
     modeleReg.fit(X_train, Y_train)
     Y_pred = modeleReg.predict(X_train)
     return X_train, Y_train, Y_pred, modeleReg
+
+def skipper(fname:str, header:bool=False):
+    """ Permit to skip header on a txt file
+    
+    Args:
+        fname : directory path of the txt file
+        header : inform if the txt file has header or not
+    Returns:
+        read the txt file from row without comment or description (header)
+    """
+    with open(fname) as fin:
+        no_comments = (line for line in fin if not line.lstrip().startswith('#'))
+        if header:
+            next(no_comments, None) # skip header
+        for row in no_comments:
+            yield row
