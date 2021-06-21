@@ -15,7 +15,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 
 from locevdet.event import Event
 from locevdet.utils import linear_regression_on_dates
-from locevdet.visualisation.plots import demo_con_style
+from locevdet.visualisation.plots import demo_con_style, circular_hist
 
 class EventList(list):
 
@@ -67,8 +67,6 @@ class EventList(list):
                 for _, trainwave in event.trainwaves.items():
                     starttime = UTCDateTime(trainwave.trace.stats.starttime)
                     same_starttime = abs(starttime - matlab_starttime)
-
-                    
                     if same_starttime < max_time_difference and \
                         trainwave.station.name == matlab_data['station'] :
                         mat = loadmat(matlab_filepath)
@@ -84,9 +82,10 @@ class EventList(list):
                             key=lambda x:abs(x-trainwave.start_global)
                         )
                         ti_index = all_ti.index(ti)
-                        td = UTCDateTime(matlab_data['starttime'] + mat["wavetrains"]['timed'][ti_index])
+                        td = UTCDateTime(matlab_data['starttime'] + mat["wavetrains"]['timed'][0])
                         duration = mat["wavetrains"]['duration'][ti_index]
                         radial = mat["wavetrains"]['r'][ti_index]
+                        azimuth = mat["wavetrains"]['azimuth']
 
                         matlab_data['trainwave'] = {
                             'radial_signal': radial,
@@ -96,11 +95,12 @@ class EventList(list):
                             'all_central_times': all_td,
                             'fmin': mat["fmin"],
                             'centralfrequency': mat["wavetrains"]['centralfrequency'][0],
-                            'duration': duration
+                            'duration': duration, 
+                            'azimuth': azimuth
                         }
                         # Careful if ti too far of start_global
                         if abs(ti - trainwave.start_global) > 15 :
-                            matlab_data = None
+                            matlab_data['trainwave'] = None
                         trainwave.matlab_data = matlab_data
                     else:
                         continue
@@ -314,3 +314,76 @@ class EventList(list):
                 figname = "dt_01-02-2020_11-02-2020.png"
             fig_save_path = os.path.join(save_fig_path, figname)
             fig_comp.savefig(fig_save_path, bbox_inches='tight')
+    
+    def azimut_polarhist(self, list_stations:List[str], save_fig_path:str=None, show:bool=False):
+        """ Plot polar histogramms of azimuts distribution of the given stations
+        
+        Args:
+            list_stations: list of station's names
+            save_fig_path : Directory path of the folder where the figure will be save
+            show: If True, a matplotlib window will appear. Default False
+        Returns :
+            Plot of the Azimuts' polar histograms and save it if save_fig_path is not None
+        """
+        plt.close("all")
+
+        fig_azimut, ax = plt.subplots(1, len(list_stations), subplot_kw=dict(projection='polar'))
+        if save_fig_path is not None:
+            fig_azimut.set_size_inches((20, 10), forward=False)
+        
+            for num, station in enumerate(list_stations):
+                print('num :', num)
+                print("station :", station)
+                azimuts = []
+                mainevent_azimuts = []
+                colors = []
+                for event in self:
+                    for _, trainwave in event.trainwaves.items():
+                        if trainwave.station.name == station and trainwave.matlab_data is not None:
+                            
+                            if trainwave.matlab_data['trainwave'] is not None:
+                                start_mainevent = UTCDateTime("2020-02-06T17:00:00")
+                                end_mainevent = UTCDateTime("2020-02-06T19:00:00")
+
+                                matlab_azimut = trainwave.matlab_data['trainwave']['azimuth']
+                                if trainwave.start_global > start_mainevent and \
+                                    trainwave.start_global < end_mainevent :
+                                    mainevent_azimuts.extend(matlab_azimut)
+                                    print('mainevent azi :', matlab_azimut)
+                                    
+                                else:
+                                    # azimut = round(matlab_azimut/10)*10 # if round per 10°
+                                    azimut = matlab_azimut
+                                    color_blue = ["#13EAC9"]*len(matlab_azimut)
+                                    colors.extend(color_blue)
+                                    azimuts.extend(azimut)
+                
+                color_red = ["#FC5A50"]*len(mainevent_azimuts)
+                azimuts.extend(mainevent_azimuts)
+                colors.extend(color_red)
+
+                print("azimuts :", azimuts)
+                print("azimuts size :", len(azimuts))
+                print("colors:", colors)
+                print("colors size :", len(colors))
+                circular_hist(
+                    ax[num], np.asarray(azimuts),
+                    color_fill=colors, 
+                    bins=190, density=False
+                    )
+                ax[num].set_title(station, fontsize=15, fontweight='bold')
+                ax[num].set_theta_zero_location("N")  # theta=0 at the top
+                ax[num].set_theta_direction(-1)  # theta increasing clockwise
+                ax[num].grid(True)
+            
+        plt.tight_layout()
+
+        if show is True:
+            plt.show()
+
+        if save_fig_path is not None:
+            stations_str = '_'.join(list_stations)
+            figname = f"azimut_distrib_{stations_str}_01-02-2020_11-02-2020.png"
+            fig_save_path = os.path.join(save_fig_path, figname)
+            fig_azimut.savefig(fig_save_path, bbox_inches='tight')
+            print("Saved")
