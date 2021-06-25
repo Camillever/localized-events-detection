@@ -56,7 +56,7 @@ def download_from_stations(client:Client, network:str, stations:List[str],
 
             if override or not os.path.isfile(mseed_save_path):
                 if pause > 0:
-                    time.sleep(2)
+                    time.sleep(1)
                 try:
                     waveforms = client.get_waveforms(
                         network, station, location, channel,
