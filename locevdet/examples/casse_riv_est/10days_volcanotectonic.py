@@ -85,7 +85,6 @@ save_mat_volcano_events = os.path.join('dictionaries_data', '01-02-2020_11-02-20
 for seismogram_detected in seismograms_detected:
     filepath = os.path.join(mseeds_path, seismogram_detected)
     seismogram = read(filepath)
-    # filemat ={}
     filemat = {"E":{},"N":{},"Z":{}}
     for _,seismo in enumerate(seismogram):
         component = str(seismo.stats.component)
