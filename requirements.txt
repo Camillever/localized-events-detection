@@ -1,4 +1,5 @@
 obspy
+scipy
 tqdm
 numpy
 pandas
