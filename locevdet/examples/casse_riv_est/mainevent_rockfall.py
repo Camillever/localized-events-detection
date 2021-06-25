@@ -49,6 +49,11 @@ print(f"{len(mainevents_list)} events have been detected by STA-LTA  on the main
 print(f"{len(duplicate_ev_removed)} dictionaries have been deleted, among : {duplicate_ev_removed}")
 print(f"{len(false_ev_removed)} dictionaries have been deleted, among : {false_ev_removed}")
 
+############################## ADD RER for each event ###########################################
+
+for event in mainevents_list:
+    event.add_station_trainwaves(mseeds_folder=mseeds_path, network='G', station='RER')
+
 # Save freqmin and freqmax :
 for event in mainevents_list:
     for _, trainwave in event.trainwaves.items():
@@ -71,20 +76,24 @@ for event in mainevents_list:
         kurtosis_data = trainwave.kurtosis(**config_kurtosis)
 
 ################################### PICK MANUALLY ARRIVALS ########################################
-for event in mainevents_list:
-    event.pick_arrivals_manually()
+# for event in mainevents_list:
+#     event.pick_arrivals_manually()
 
 ###########################  LOCALISATION : Convertion of arrivals .mat ############################
 order_stations = ['HIM', 'FRE', 'NSR', 'PER', 'TTR', 'RER'] 
 
-starts_to_save = ['start_manual', 'ti', 'td', 'start_specific']
+starts_to_save = [
+    # 'start_manual', 
+    'ti', 
+    'td', 
+    'start_specific']
 save_folderpath = os.path.join("dictionaries_data", "main_event", "matlab")
 
 from locevdet.eventlist import EventList
 def starts_save_to_mat(eventlist:EventList, type_start, folder_save:str):
     number_events = len(mainevents_list)
     mainevents = np.zeros((number_events, len(order_stations)), dtype=object)
-    for _, event in enumerate(eventlist):
+    for n_ev, event in enumerate(eventlist):
         event_row = ['None', 'None', 'None', 'None', 'None', 'None']
         for number, station in enumerate(order_stations) :
             for i, trainwave in event.trainwaves.items():
@@ -96,11 +105,11 @@ def starts_save_to_mat(eventlist:EventList, type_start, folder_save:str):
                             start = trainwave.start_specific_manual
                     elif type_start == 'ti':
                         if trainwave.matlab_data is not None :
-                            if trainwave.matlab_data['trainwave']['initial_time'] is not None:
+                            if trainwave.matlab_data['trainwave'] is not None:
                                 start = trainwave.matlab_data['trainwave']['initial_time']
                     elif type_start == 'td':
                         if trainwave.matlab_data is not None :
-                            if trainwave.matlab_data['trainwave']['central_time'] is not None:
+                            if trainwave.matlab_data['trainwave'] is not None:
                                 start = trainwave.matlab_data['trainwave']['central_time']
                     elif type_start == 'start_specific':
                         if trainwave.kurtosis_data['start_specific'] is not None:
@@ -108,7 +117,7 @@ def starts_save_to_mat(eventlist:EventList, type_start, folder_save:str):
                     event_row[number] = str(start)
                 elif trainwave.station.name != station:
                     continue          
-        mainevents[i,:] = event_row
+        mainevents[n_ev,:] = event_row
     print(mainevents)
     save_filename = f"mainevent_{type_start}.mat"
     savemat(os.path.join(folder_save, save_filename), mdict={'mainevents': mainevents})
