@@ -89,7 +89,7 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
                 start_global >= (starttime + apodization_time_restricted) :
 
                 event = Event(start_global=start_global, stations=stations)
-                event.add_trainwaves(stream_traces)
+                event.add_trainwaves_from_stalta(stream_traces)
                 event_list.append(event)
 
     # Remove duplicate and false events from event_list
