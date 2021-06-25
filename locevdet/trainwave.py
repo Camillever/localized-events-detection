@@ -46,6 +46,7 @@ class Trainwave():
         self.end_specific = kwargs.get('end_specific', None)
         self.form_ratio = kwargs.get('form_ratio', None)
         self.duration = kwargs.get('duration', None)
+        self.picks = kwargs.get('picks', None)
 
         # Matlab other variables
         self.matlab_data = kwargs.get('matlab_data', None)
@@ -104,8 +105,6 @@ class Trainwave():
         snr = signal_level / noise_level
         self.snr = snr
 
-        return snr
-
     def endtime_detection(self, 
             rolling_max_window:float=0, 
             time_restricted:float=5,
@@ -154,11 +153,22 @@ class Trainwave():
                     max_level_time = [utc_max_level_time]
 
             if len(max_level_time) != 0:
-                duration = self.end_specific - self.kurtosis_data['start_specific']
+                # duration = self.end_specific - self.kurtosis_data['start_specific']
+                duration = self.end_specific - self.start_global
                 start_to_max = self.end_specific - max_level_time[0]
                 self.duration = duration
                 self.form_ratio = start_to_max / duration
                 return start_to_max / duration, duration
+
+    def number_picks(self, rolling_max_window):
+        envelope_trace = self.envelope(trace_type='trace_filtered', rolling_max_window=rolling_max_window)
+
+        max_level = np.max(envelope_trace)
+        threshold = max_level / 2
+        
+        number_picks = trigger_onset(envelope_trace, threshold, threshold)
+
+        self.picks = number_picks[:,0]
 
     def __repr__(self):
         return f"Trainwave{self.trace}"
