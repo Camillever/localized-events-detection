@@ -29,9 +29,10 @@ def freq_band_interest(eventlist:EventList, save_fig_path:str=None, show:bool=Fa
 
     for event in eventlist:
         for _, trainwave in event.trainwaves.items():
-            if trainwave.matlab_data is not None : 
-                all_fmin.append(trainwave.matlab_data['trainwave']['fmin'])
-                all_central_frq.append(trainwave.matlab_data['trainwave']['centralfrequency'])
+            if trainwave.matlab_data is not None :
+                if trainwave.matlab_data['trainwave'] is not None: 
+                    all_fmin.append(trainwave.matlab_data['trainwave']['fmin'])
+                    all_central_frq.append(trainwave.matlab_data['trainwave']['centralfrequency'])
 
     mean_fmin = np.mean(all_fmin)
     fc = np.max(all_central_frq)
