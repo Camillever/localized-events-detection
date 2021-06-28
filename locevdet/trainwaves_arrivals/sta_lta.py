@@ -17,13 +17,14 @@ from locevdet.event import Event
 from locevdet.eventlist import EventList
 from locevdet.stations import STATIONS_NETWORKS
 from locevdet.examples.casse_riv_est.download import apodisation
+from locevdet.descriptors import envelope_fct, snr_calculation_fct
 
 def stalta_detect_events(folder_in:str, all_seismogram:List[str],
         freqmin:int, freqmax:int,
         nsta_time:int, nlta_time:int, thr_on:float, thr_off:float,
         minimum_time:float, uncertainty_ratio:float=5/100,
         trigger_type:str="classicstalta", thr_coincidence_sum:int=1,
-        sampling_rate=100) -> EventList:
+        sampling_rate=100, low_snr_remove:bool=False, **kwargs) -> EventList:
     """
     Save dictionaries for each trainwaves detected
     containing global start time and order of station's arrivals.
@@ -41,12 +42,22 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
         nlta_time : TODO
         thr_on : threshold for switching trigger on
         thr_off: threshold for switching trigger off
+        low_snr_remove : if True, calculate the signal to noise ratio (snr) of each trace
+                and remove events with low snr
+                !Need: rolling_max_window, general_thr, pre_trigger and post_trigger to trim traces!
+
+        kwargs: other arguments as:
+            - rolling_max_window : length of the moving window (in seconds) to calculate envelope
+            - pre_trigger : duration before the start_global to cut the trace, in seconds
+                    (see trim_trace function from waveform_processing.py )
+            - post_trigger : duration after the start_global to cut the trace, in seconds
+                    (see trim_trace function from waveform_processing.py )
 
     Returns :
         Class 'EventList' which compile all events detected by stations
     """
     # Compile the names of all seismograms
-
+    lowsnr_removed = []
     period_filename = list(set(get_info_from_mseedname(filename)['periodtime']
         for filename in all_seismogram))
     period_filename.sort()
@@ -68,6 +79,8 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
 
         stream_stations = [trace.stats.station for trace in stream_traces]
         # Add every single event in this period
+        
+
         for triggered_event in triggered_events:
             start_global = UTCDateTime(triggered_event['time'])
             traces = [
@@ -79,6 +92,50 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
                 STATIONS_NETWORKS[trace.stats.network][trace.stats.station]
                 for trace in traces
             ]
+
+            event_accepted = True
+            # Calculate snr before creation of events
+            if low_snr_remove is True:
+                general_thr = kwargs.get('general_thr', 3)
+                all_snr = []
+                stations_order = []
+                for num, trace in enumerate(traces):
+                    stations_order.append(stations[num].name)
+                    rolling_max_window = kwargs.get('rolling_max_window', 0)
+
+                    envelope_trim_filt = envelope_fct(
+                        trace_type='trimmed_filtered', 
+                        rolling_max_window=rolling_max_window,
+                        trace=trace, 
+                        freqmin = freqmin,
+                        freqmax = freqmax,
+                        pre_trigger = kwargs.get('pre_trigger', 10),
+                        post_trigger = kwargs.get('post_trigger', 50),
+                        start_global = start_global)
+
+                    envelope_filt = envelope_fct(
+                        trace_type='trace_filtered', 
+                        rolling_max_window=rolling_max_window, 
+                        trace=trace, freqmin = freqmin, freqmax = freqmax)
+
+                    _, snr = snr_calculation_fct(
+                        envelope_trim_filt=envelope_trim_filt, envelope_filt=envelope_filt)
+                    all_snr.append(snr)
+
+                if all(i <= general_thr for i in all_snr) :
+                    event_accepted = False
+                    lowsnr_removed.append(start_global)
+
+                elif 'PER' in stations_order:
+                    index_per = stations_order.index('PER')
+                    snr_per = all_snr[index_per]
+                    all_snr_copy = all_snr.copy()
+                    all_snr_copy.pop(index_per)
+
+                    if snr_per > general_thr and all(i <= general_thr for i in all_snr_copy):
+                        event_accepted = False
+                        lowsnr_removed.append(start_global)
+
             starttime = stream_traces[0].stats.starttime
             endtime = stream_traces[0].stats.endtime
 
@@ -86,17 +143,27 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
             apodization_time_restricted = apodisation*(endtime-starttime)
 
             if start_global <= (endtime - apodization_time_restricted) and \
-                start_global >= (starttime + apodization_time_restricted) :
-
+                start_global >= (starttime + apodization_time_restricted) and \
+                    event_accepted is True:
                 event = Event(start_global=start_global, stations=stations)
                 event.add_trainwaves_from_stalta(stream_traces)
                 event_list.append(event)
+
+                for _, trainwave in event.trainwaves.items():
+                    station_name = trainwave.station.name
+                    trainwave.freqmin_interest = freqmin
+                    trainwave.freqmax_interest = freqmax
+                    if low_snr_remove is True:
+                        index_station = stations_order.index(station_name)
+                        snr_station = all_snr[index_station]
+                        trainwave.snr = snr_station
+
 
     # Remove duplicate and false events from event_list
     duplicate_ev_removed = remove_too_close_trainwaves(event_list, minimum_time)
     false_ev_removed = remove_border_stalta_false_trainwaves(event_list, nlta_time, uncertainty_ratio)
 
-    return event_list, duplicate_ev_removed, false_ev_removed
+    return event_list, duplicate_ev_removed, false_ev_removed, lowsnr_removed
 
 
 def build_period_stream(period_name:str, folder_in:str, mseed_name:str, 
