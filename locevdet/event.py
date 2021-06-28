@@ -9,13 +9,14 @@ import matplotlib.pyplot as plt
 from matplotlib.artist import Artist
 from matplotlib.backend_bases import MouseButton
 
-from obspy.core import Stream
+from obspy.core import Stream, read
 from obspy.signal.trigger import classic_sta_lta
 
 from locevdet.stations import Station
 from locevdet.trainwave import Trainwave
 
-from locevdet.utils import clean_utc_str
+from locevdet.utils import clean_utc_str, get_info_from_mseedname
+from locevdet.waveform_processing import trim_trace
 from locevdet.visualisation.plots import demo_con_style
 
 class Event():
@@ -25,12 +26,38 @@ class Event():
         self.stations = stations
         self.trainwaves = {}
 
-    def add_trainwaves(self, stream:Stream):
+    def add_trainwaves_from_stalta(self, stream:Stream):
         stream_stations = [trace.stats.station for trace in stream]
         for station in self.stations:
             station_index = stream_stations.index(station.name)
             trace = stream[station_index]
             self.trainwaves[station] = Trainwave(trace, station, self.start_global)
+        
+    def add_station_trainwaves(self, mseeds_folder:str, network:str, station:str):
+        from locevdet.stations import STATIONS
+        for station_class in STATIONS:
+            if station_class.name == station:
+                self.stations.append(STATIONS[STATIONS.index(station_class)])
+                station_class_remind = station_class
+
+        seismograms_station = [
+            mseed for mseed in os.listdir(mseeds_folder)
+            if mseed.startswith(f"{network}_{station}")
+        ]
+        start_global = self.start_global
+
+        for mseed in seismograms_station :
+            mseed_info = get_info_from_mseedname(mseed)
+            if start_global > mseed_info['starttime'] \
+                and start_global < mseed_info['endtime'] :
+
+                filepath = os.path.join(mseeds_folder, mseed)
+                seismogram = read(filepath)
+                for _,seismo in enumerate(seismogram):
+                    if seismo.stats.component == 'Z':
+                        trace = seismo
+                        self.trainwaves[station] = Trainwave(trace, station_class_remind, self.start_global)
+
 
 
     def plot(self, type_graph:str='stalta', seismograms_type:str='discontinuous',
@@ -68,12 +95,15 @@ class Event():
             fig.set_size_inches((20, 10), forward=False)
 
         nb_stations = len(self.stations)
+        freqmin_raw, freq_max_raw = 0.5, 50
         for num, (_, trainwave) in enumerate(self.trainwaves.items()):
-            if type_graph == 'stalta' and seismograms_type == 'discontinuous':
-                trace = trainwave.trace
+            if type_graph == 'stalta' :
+                freqmin = kwargs.get('freqmin', 0.5)
+                freqmax = kwargs.get('freqmax', 50)
+                trace = trainwave.trace.copy().filter('bandpass', freqmin=freqmin, freqmax=freqmax)
                 times = trace.times()
-                freqmin, freqmax = 0.5, 50
                 ax1 = fig.add_subplot(2, nb_stations, num+1)
+            
             else :
                 trace_trim = trainwave.trace_trimmed
                 trace_filtered = trainwave.trace_filtered
@@ -86,14 +116,10 @@ class Event():
                 if type_graph == 'envelope':
                     ax1 = fig.add_subplot(nb_stations, 1, num+1)
                 
-                elif type_graph == 'stalta' and seismograms_type == 'continuous':
-                    freqmin, freqmax = 0.5, 50
-                    ax1 = fig.add_subplot(2, nb_stations, num+1)
                 else:
                     ax1 = fig.add_subplot(2, nb_stations, num+1)
 
-            start_name_trace = clean_utc_str(trace.stats.starttime)
-            end_name_trace = clean_utc_str(trace.stats.endtime)
+            
             
             ## SUBPLOT SEISMOGRAM ##
 
@@ -102,25 +128,52 @@ class Event():
             xmin1, xmax1 = ax1.get_xlim()
             ymin1, ymax1 = ax1.get_ylim()
 
-            label_rawtrace = "Sismogramme (0.5-50Hz)"
+            label_rawtrace = f"Sismogramme ({freqmin} - {freqmax}Hz)"
             label_tracetrim = f"Sismogramme filtré ({freqmin}-{freqmax}Hz)"
             label_startglobal = "Début global de l\'événement détecté par STA-LTA"
 
-            startglobal = trainwave.start_global - trace.stats.starttime
-            ax1.axvline(startglobal, ymin1, ymax1, color='darkgreen', linewidth=2.5, label=label_startglobal)
+            
+            if seismograms_type != 'continuous': 
+                startglobal = trainwave.start_global - trace.stats.starttime
+                ax1.axvline(startglobal, ymin1, ymax1, color='darkgreen', linewidth=2.5, label=label_startglobal)
 
             if type_graph == 'stalta':
-                ax1.plot(times, trace.data, color='black', alpha=0.3, linewidth=1.1, label=label_rawtrace)
-
                 nsta = int(trainwave.nsta_time*trace.stats.sampling_rate)
                 nlta = int(trainwave.nlta_time*trace.stats.sampling_rate)
-                cft = classic_sta_lta(trace.data, nsta, nlta)
+                if seismograms_type == 'continuous':
+                    pre_trigger = kwargs.get('pre_trigger', 10)
+                    post_trigger = kwargs.get('post_trigger', 50)
 
+                    trace_trim_stalta = trim_trace(trace, trainwave.start_global, pre_trigger+nlta, post_trigger)
+
+                    trace_trim = trim_trace(trace, trainwave.start_global, pre_trigger, post_trigger)
+                    times = trace_trim.times()
+                    trace = trace_trim
+                    trainwave.trace_filtered = trace
+
+                    startglobal = trainwave.start_global - trace.stats.starttime
+                    ax1.axvline(startglobal, ymin1, ymax1, color='darkgreen', linewidth=2.5, label=label_startglobal)
+
+                    cft_trim = classic_sta_lta(trace_trim_stalta.data, nsta, nlta)
+                    cft = cft_trim[-len(trace_trim):]
+
+                    snr_title = ("{:.2f}".format(trainwave.snr))
+                    demo_con_style(ax1, f"snr : {snr_title}", colorborder='black')
+                else: 
+                    cft = classic_sta_lta(trace.data, nsta, nlta)
+                ax1.plot(times, trace.data, color='black', alpha=0.3, linewidth=1.1, label=label_rawtrace)
                 ax2 = fig.add_subplot(2, nb_stations, (num+nb_stations)+1)
                 ax2.plot(times, cft, color='blue', alpha=0.3, linewidth=1.1, label='STA-LTA classique')
                 ymin2, ymax2 = ax2.get_ylim()
                 ax2.axvline(startglobal, ymin2, ymax2, color='darkgreen', linewidth=2.5, label=label_startglobal)
-            
+                thr_on = kwargs.get('thr_on', 2.9)
+                ax2.axhline(thr_on,
+                color='red',
+                linestyle='--', 
+                linewidth=1,
+                label="Seuil de détection par STA-LTA"
+                )
+
             elif type_graph == 'kurtosis':
                 trace_trim = trainwave.trace_trimmed
                 trim_times = trace_trim.times()
@@ -223,6 +276,9 @@ class Event():
                 linestyle='--', 
                 linewidth=1.5
                 )
+            
+            start_name_trace = clean_utc_str(trace.stats.starttime)
+            end_name_trace = clean_utc_str(trace.stats.endtime)
 
         title = (
             f"Fenêtre de visualisation : {start_name_trace} - {end_name_trace}\n"
@@ -256,60 +312,64 @@ class Event():
             figname = f"event_{clean_utc_str(self.start_global)}.png"
             fig_save_path = os.path.join(save_fig_path, figname)
             fig.savefig(fig_save_path, bbox_inches='tight')
+        fig.clear()
+        plt.close(fig)
 
     def pick_arrivals_manually(self):
         plt.close("all")
 
-        fig = plt.figure("pick_arrivals_per_event")
         nb_stations = len(self.stations)
-        ax = ["ax" + str(i) for i in range(nb_stations)]
+        fig, ax = plt.subplots(nb_stations-1, 1)
+        # ax = ["ax" + str(i) for i in range(nb_stations)]
         axvline = ["axvline" + str(i) for i in range(nb_stations)]
         for num, (_, trainwave) in enumerate(self.trainwaves.items()):
-            freqmin = trainwave.freqmin_interest
-            freqmax = trainwave.freqmax_interest
+            if trainwave.station.name != 'RER':
+                freqmin = trainwave.freqmin_interest
+                freqmax = trainwave.freqmax_interest
 
-            ax[num] = fig.add_subplot(nb_stations, 1, num+1)
-            Artist.set_picker(ax[num], True)
-            ax_title = f'{trainwave.station.name} {freqmin}-{freqmax}Hz'
-            ax[num].set_title(ax_title, fontsize=15, fontweight='bold')
+                # ax[num] = fig.add_subplot(nb_stations, 1, num+1)
+                Artist.set_picker(ax[num], True)
+                ax_title = f'{trainwave.station.name} {freqmin}-{freqmax}Hz'
+                ax[num].set_title(ax_title, fontsize=15, fontweight='bold')
 
-            trace_filtered = trainwave.trace_filtered
-            ax[num].plot(trace_filtered.times(), trace_filtered)
+                trace_filtered = trainwave.trace_filtered
+                    
+                ax[num].plot(trace_filtered.times(), trace_filtered)
 
-            start_name_event = clean_utc_str(trace_filtered.stats.starttime)
-            end_name_event = clean_utc_str(trace_filtered.stats.endtime)
+                start_name_event = clean_utc_str(trace_filtered.stats.starttime)
+                end_name_event = clean_utc_str(trace_filtered.stats.endtime)
 
-            label_startglobal = "Début global de l\'événement détecté par STA-LTA"
-            startglobal = trainwave.start_global - trace_filtered.stats.starttime
-            ax[num].axvline(startglobal, color='darkgreen', linewidth=2.5, label=label_startglobal)
+                label_startglobal = "Début global de l\'événement détecté par STA-LTA"
+                startglobal = trainwave.start_global - trace_filtered.stats.starttime
+                ax[num].axvline(
+                    startglobal, color='darkgreen', linewidth=2.5, label=label_startglobal
+                )
 
-            start_specific = trainwave.kurtosis_data['start_specific'] - trace_filtered.stats.starttime
-            label_startspecific = "Début précis du train d\'onde détecté par Kurtosis"
-            ax[num].axvline(start_specific, color='darkred', alpha=0.5, linewidth=3, label=label_startspecific)
-            
-            axvline[num] = ax[num].axvline(x=0., color="red", linestyle = 'dashed')
-
-            if trainwave.matlab_data is not None :
-                all_ti = trainwave.matlab_data['trainwave']['all_initial_times']
-                # for ti in all_ti:
-                #     tis_delta = ti - trace_filtered.stats.starttime
-                #     ax[num].axvline(tis_delta, color='purple', linewidth=3, alpha=0.8)
-                ax[num].vlines(all_ti, color='purple')
+                start_specific = trainwave.kurtosis_data['start_specific'] - trace_filtered.stats.starttime
+                label_startspecific = "Début précis du train d\'onde détecté par Kurtosis"
+                ax[num].axvline(
+                    start_specific, 
+                    color='darkred', alpha=0.5, 
+                    linewidth=3, label=label_startspecific
+                )
                 
-                all_td = trainwave.matlab_data['trainwave']['all_central_times']
-                # for td in all_td:
-                #     tds_delta = td - trace_filtered.stats.starttime
-                #     ax[num].axvline(tds_delta, color='blue', linewidth=3, alpha=0.8)
-                ax[num].vlines(all_td, color='blue')
+                axvline[num] = ax[num].axvline(x=0., color="red", linestyle = 'dashed')
 
+                if trainwave.matlab_data is not None :
+                    all_ti_utc = trainwave.matlab_data['trainwave']['all_initial_times']
+                    all_ti = [ti - trace_filtered.stats.starttime for ti in all_ti_utc]
+                    ymin, ymax = ax[num].get_ylim()
+                    ax[num].vlines(all_ti, ymin, ymax, color='purple')
+                    
+                    all_td_utc = trainwave.matlab_data['trainwave']['all_central_times']
+                    all_td = [td - trace_filtered.stats.starttime for td in all_td_utc]
+                    ax[num].vlines(all_td, ymin, ymax, color='blue')
 
-                if trainwave.matlab_data['trainwave']['initial_time'] != 'None':
-                    ti = trainwave.matlab_data['trainwave']['initial_time']
-                    ti_delta = ti - trace_filtered.stats.starttime
-                    label_ti = "Début précis du train d\'onde détecté par Méthode de Stockwell"
-                    ax[num].axvline(ti_delta, color='pink', linewidth=3, alpha=0.8, label=label_ti)
-
-
+                    if trainwave.matlab_data['trainwave']['initial_time'] != 'None':
+                        ti = trainwave.matlab_data['trainwave']['initial_time']
+                        ti_delta = ti - trace_filtered.stats.starttime
+                        label_ti = "Début précis du train d\'onde détecté par Méthode de Stockwell"
+                        ax[num].axvline(ti_delta, color='pink', linewidth=3, alpha=0.8, label=label_ti)
         
         def on_move(event):
             for n, axe in enumerate(ax):
