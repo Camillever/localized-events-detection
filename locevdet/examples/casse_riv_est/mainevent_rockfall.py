@@ -40,7 +40,7 @@ config_stalta = {
     "minimum_time" : 2
 }
 
-mainevents_list, duplicate_ev_removed, false_ev_removed = stalta_detect_events(
+mainevents_list, duplicate_ev_removed, false_ev_removed, _ = stalta_detect_events(
     folder_in=mseeds_path,
     all_seismogram=main_event_seismograms,
     **config_stalta
