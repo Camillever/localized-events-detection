@@ -7,7 +7,7 @@ from typing import List
 import numpy as np
 
 import matplotlib.pyplot as plt
-import matplotlib.dates as dates   
+import matplotlib.dates as dates
 
 from obspy import UTCDateTime
 from mat4py import loadmat
@@ -104,6 +104,43 @@ class EventList(list):
                         trainwave.matlab_data = matlab_data
                     else:
                         continue
+    def delete_low_snr(self, general_thr:float, rolling_max_window:float=0):
+        """ Delete events in EventList Class with low SNR on these trainwaves 
+        
+        Args:
+            general_thr : general threshold below wich trainwaves are considered 'False positives'
+        
+        Returns:
+            Delete low SNR events in the EventList
+            print all start_global in UTCDateTime of each deleted events
+        """
+        events_removed = []
+        for event in self:
+            utc_start = UTCDateTime(event.start_global)
+            all_snr = []
+            stations_order = []
+            for _, (_, trainwave) in enumerate(event.trainwaves.items()):
+                stations_order.append(trainwave.station.name)
+                trainwave.snr_calculation(rolling_max_window=rolling_max_window)
+                all_snr.append(trainwave.snr)
+
+            # Condition on all low snr trainwaves
+            if all(i <= general_thr for i in all_snr) :
+                self.remove(event)
+                events_removed.append(utc_start)
+
+            # and Condition on PER station (with snr >general_thr insted of False Positives event)
+            elif 'PER' in stations_order:
+                index_per = stations_order.index('PER')
+                snr_per = all_snr[index_per]
+                all_snr_copy = all_snr.copy()
+                all_snr_copy.pop(index_per)
+
+                if snr_per > general_thr and all(i <= general_thr for i in all_snr_copy):
+                    self.remove(event)
+                    events_removed.append(utc_start)
+            
+        return events_removed
 
     def plots_time_compare_HIM_FRE(self, type_graph:str, 
             save_fig_path:str=None, show:bool=True):
