@@ -43,7 +43,7 @@ config_stalta = {
 
 ## Are nsta and nlta parameters pertinents ??
 
-event_list, duplicate_ev_removed, false_ev_removed = stalta_detect_events(
+event_list, duplicate_ev_removed, false_ev_removed, _ = stalta_detect_events(
     folder_in=mseeds_path,
     all_seismogram=all_seismogram,
     **config_stalta
