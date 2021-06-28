@@ -11,6 +11,7 @@ from locevdet.stations import Station
 
 from locevdet.waveform_processing import trim_trace
 from locevdet.utils import rolling_max, kurtosis_norm
+from locevdet.descriptors import envelope_fct, snr_calculation_fct
 
 class Trainwave():
 
@@ -81,28 +82,28 @@ class Trainwave():
 
     def envelope(self, trace_type:str='trimmed_filtered', rolling_max_window:float=0):
         if trace_type == 'trimmed_filtered':
-            analytic_signal = hilbert(self.trace_filtered)
+            trace_filtered = self.trace_filtered
+            envelope = envelope_fct(trace_type, rolling_max_window, trace_filtered=trace_filtered)
+
         elif trace_type == 'trace_filtered':
             trace = self.trace.copy()
             freqmin = self.freqmin_interest
             freqmax = self.freqmax_interest
-            trace_filtered = trace.filter('bandpass', freqmin=freqmin, freqmax=freqmax)
-            analytic_signal = hilbert(trace_filtered)
-        envelope = np.abs(analytic_signal)
-        if rolling_max_window > 0:
-            envelope = rolling_max(envelope, rolling_max_window)
+            envelope = envelope_fct(
+                trace_type, rolling_max_window, 
+                trace=trace, freqmin=freqmin, freqmax=freqmax)     
+
         return envelope
     
     def snr_calculation(self, rolling_max_window:float=0):
         """ TODO """
-        envelope = self.envelope(trace_type='trimmed_filtered', rolling_max_window=rolling_max_window)
-        envelope_trace = self.envelope(trace_type='trace_filtered', rolling_max_window=rolling_max_window)
+        envelope_trim_filt = self.envelope(trace_type='trimmed_filtered', rolling_max_window=rolling_max_window)
+        envelope_filt = self.envelope(trace_type='trace_filtered', rolling_max_window=rolling_max_window)
 
-        noise_level = np.quantile(envelope_trace, 0.5)
+        noise_level, snr = snr_calculation_fct(
+            envelope_trim_filt=envelope_trim_filt, envelope_filt=envelope_filt)
+
         self.noise_level = noise_level
-        signal_level = np.max(envelope)
-
-        snr = signal_level / noise_level
         self.snr = snr
 
     def endtime_detection(self, 
