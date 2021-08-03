@@ -37,13 +37,13 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
         save_path: directory path to save the dictionnaries
         freqmin: Minimum frequency for the bandpass filter
         freqmax: Maximum frequency for the bandpass filter
-        trigger_type: TODO
-        nsta_time: TODO
-        nlta_time : TODO
+        trigger_type: Type of triggering stalta method used
+        nsta_time: Short time window for the stalta method (in seconds)
+        nlta_time : Long time window for the stalta method (in seconds)
         thr_on : threshold for switching trigger on
         thr_off: threshold for switching trigger off
         low_snr_remove : if True, calculate the signal to noise ratio (snr) of each trace
-                and remove events with low snr
+                and remove events with low snr (calculated on the whole seismogram !)
                 !Need: rolling_max_window, general_thr, pre_trigger and post_trigger to trim traces!
 
         kwargs: other arguments as:
@@ -104,7 +104,7 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
                     rolling_max_window = kwargs.get('rolling_max_window', 0)
 
                     envelope_trim_filt = envelope_fct(
-                        trace_type='trimmed_filtered', 
+                        trace_type='trimmed_filtered',
                         rolling_max_window=rolling_max_window,
                         trace=trace, 
                         freqmin = freqmin,
@@ -114,15 +114,17 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
                         start_global = start_global)
 
                     envelope_filt = envelope_fct(
-                        trace_type='trace_filtered', 
+                        trace_type='trace_filtered',
                         rolling_max_window=rolling_max_window, 
                         trace=trace, freqmin = freqmin, freqmax = freqmax)
 
                     _, snr = snr_calculation_fct(
                         envelope_trim_filt=envelope_trim_filt, envelope_filt=envelope_filt)
+                    print("station :", stations[num].name)
+                    print('stalta snr calculated : ', snr)
                     all_snr.append(snr)
 
-                if all(i <= general_thr for i in all_snr) :
+                if all(snr <= general_thr for snr in all_snr) :
                     event_accepted = False
                     lowsnr_removed.append(start_global)
 
@@ -132,7 +134,7 @@ def stalta_detect_events(folder_in:str, all_seismogram:List[str],
                     all_snr_copy = all_snr.copy()
                     all_snr_copy.pop(index_per)
 
-                    if snr_per > general_thr and all(i <= general_thr for i in all_snr_copy):
+                    if snr_per > general_thr and all(snr <= general_thr for snr in all_snr_copy):
                         event_accepted = False
                         lowsnr_removed.append(start_global)
 
@@ -225,7 +227,7 @@ def remove_too_close_trainwaves(event_list:EventList, minimum_time:float=0)-> Li
 
 def remove_border_stalta_false_trainwaves(event_list:EventList, nlta_time:int, 
         uncertainty_ratio:float=0.05)-> List[str]:
-    """ TODO
+    """
     Class 'EventList' which compile all events detected by stations, is modified :
         without false trainwaves
 
