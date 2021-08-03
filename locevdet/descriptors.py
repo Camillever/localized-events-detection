@@ -42,6 +42,7 @@ def envelope_fct(trace_type:str, rolling_max_window:float=0, **kwargs):
                 trace_trimmed = trim_trace(trace.copy(), start_global, pre_trigger, post_trigger)
                 trace_filtered = trace_trimmed.filter(
                     'bandpass', freqmin=freqmin_filter, freqmax=freqmax_filter)
+                
             except TypeError:
                 print(" no trace_filtered calculated")
                 raise
