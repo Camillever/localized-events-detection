@@ -5,6 +5,8 @@
 import os
 import pickle
 
+from tqdm import tqdm
+
 from obspy import UTCDateTime
 
 from locevdet.trainwaves_arrivals.sta_lta import stalta_detect_events
@@ -13,6 +15,13 @@ from locevdet.trainwaves_arrivals.band_freq_interest import freq_band_interest
 from locevdet.utils import clean_utc_str
 # from locevdet.visualisation.plots import plot_stalta_per_event, plot_kurtosis_per_event
 
+start_period = UTCDateTime("2020-02-01T00:00:00")
+end_period = UTCDateTime("2020-02-11T00:00:00")
+#Save to pickle format
+period_name = '_'.join((clean_utc_str(start_period), clean_utc_str(end_period)))
+dictname = f"eventlist_{period_name}.pkl"
+eventlist_pickle_filepath = \
+    os.path.join('dictionaries_data', '01-02-2020_11-02-2020', 'rockfall', 'eventlist', dictname)
 # Paths of seismograms
 mseeds_path = os.path.join("seismograms", "01-02-2020_11-02-2020", "rockfall", "average_strong")
 
@@ -25,10 +34,12 @@ stalta_detection_events = True
 add_RER = False
 add_matlab_results = False
 kurtosis_tool_params = False
-kurtosis = True
-envelope_enddetection = False
+kurtosis = False
+envelope_enddetection = True
 descriptors = True
 azimut_distribution = False
+
+check_pickle_content = False
 ################################## STA-LTA #######################################################
 
 if stalta_detection_events:
@@ -45,14 +56,18 @@ if stalta_detection_events:
         "thr_coincidence_sum": 2,
 
         # Remove useless events (duplicate, false)
-        "minimum_time" : 2
+        "minimum_time" : 2,
+
+        "rolling_max_window" : 4  # in seconds
     }
 
     event_list, duplicate_ev_removed, false_ev_removed, _ = stalta_detect_events(
         folder_in=mseeds_path,
         all_seismogram=all_seismogram_reduced,
+        low_snr_remove=False,
         **config_stalta
     )
+
     print(f"{len(event_list)} Events")
     print(f"{len(duplicate_ev_removed)} dictionnaires ont été supprimés, dont : \
         {duplicate_ev_removed}")
@@ -61,23 +76,29 @@ if stalta_detection_events:
     # Plots
     ## Per event
     save_stalta_fig_path = os.path.join("captures", "01-02-2020_11-02-2020", "rockfall", "stalta")
-    for event in event_list:
+    print("STA-LTA captures in process")
+    for event in tqdm(event_list):
         event.plot(type_graph='stalta', save_fig_path=save_stalta_fig_path, show=False)
     
     #Save to pickle format
-    start_period = UTCDateTime("2020-02-01T00:00:00")
-    end_period = UTCDateTime("2020-02-11T00:00:00")
-    period_name = '_'.join((clean_utc_str(start_period), clean_utc_str(end_period)))
-    dictname = f"eventlist_rockfall_{period_name}.pkl"
-    eventlist_pickle_filepath = \
-        os.path.join('dictionaries_data', '01-02-2020_11-02-2020', \
-            'rockfall', 'eventlist', dictname)
     event_list.save(eventlist_pickle_filepath, override=True)
+
 
 ############################## ADD RER for each event ###########################################
 if add_RER:
-    for event in event_list:
-        event.add_station_trainwaves(mseeds_folder=mseeds_path, network='G', station='RER')
+    all_eventlists = os.listdir(os.path.join('dictionaries_data', '01-02-2020_11-02-2020', \
+        'rockfall', 'eventlist'))
+    for eventlist_file in all_eventlists:
+        print(f"Eventlist file in process :{eventlist_file}")
+        eventlist_filepath = os.path.join('dictionaries_data', '01-02-2020_11-02-2020', \
+            'rockfall', 'eventlist', eventlist_file)
+        with open(eventlist_filepath, "rb") as content:
+            eventlist = pickle.load(content)
+
+            for event in eventlist:
+                event.add_station_trainwaves(mseeds_folder=mseeds_path, network='G', station='RER')
+
+                eventlist.save(eventlist_pickle_filepath, override=True)
 
 ############################## ADD matlab's results to Evenlist ###################################
 if add_matlab_results :
@@ -102,6 +123,9 @@ if add_matlab_results :
                 "rockfall", "clustering")
             for event in eventlist:
                 event.fc_td_clustering(save_clustering)
+            
+            eventlist.save(eventlist_pickle_filepath, override=True)
+
 ##################################### KURTOSIS #####################################################
 # The tool to determine parameters for kurtosis
 config_kurtosis_tool = {
@@ -145,6 +169,7 @@ if kurtosis :
                         freqmin, freqmax = 2, 10
                         trainwave.freqmin_interest = freqmin
                         trainwave.freqmax_interest = freqmax
+                    
                     kurtosis_data = trainwave.kurtosis(**config_kurtosis)
 
             # Plots
@@ -155,10 +180,13 @@ if kurtosis :
             for event in eventlist:
                 event.plot(type_graph='kurtosis', save_fig_path=save_kurt_fig_path, \
                     show=False, **config_kurtosis)
+        
+        #Save to pickle format
+        eventlist.save(eventlist_pickle_filepath, override=True)
 
 # ################################### ENVELOPE AND End event ######################################
 config_envelope={
-    "rolling_max_window" : 4,          # in seconds
+    "rolling_max_window" : 50,  # number of points (100pts = 1s if sampling_rate = 100Hz)
     "thr_snr_purcent" : 1.1,           # 1 = 100%
     "time_restricted" : 5,             # in seconds
     "time_inspect_startglobal" : 1               # in seconds
@@ -173,23 +201,26 @@ if envelope_enddetection:
         with open(eventlist_filepath, "rb") as content:
             eventlist = pickle.load(content)
           
-        # Determination of ends of trainwaves
-        for event in event_list:
-            for _, trainwave in event.trainwaves.items():
-                if trainwave.station.name != 'RER':
-                    trainwave.endtime_detection(rolling_max_window=config_envelope['rolling_max_window'],
-                        time_restricted=config_envelope['time_restricted'],
-                        time_inspect_startglobal=config_envelope['time_inspect_startglobal'],
-                        thr_snr_purcent=config_envelope['thr_snr_purcent'])
-        # Plots
-        # save_envelope_fig_path = os.path.join('captures', '01-02-2020_11-02-2020', \
-        # 'rockfall', 'envelope')
-        save_envelope_fig_path = os.path.join('captures', '01-02-2020_11-02-2020', \
-            'rockfall', 'envelope_rapport')
-        for event in event_list:
-            event.plot(type_graph='envelope', save_fig_path=save_envelope_fig_path, \
-                show=False, **config_envelope)
-
+            # Determination of ends of trainwaves
+            for event in eventlist:
+                for _, trainwave in event.trainwaves.items():
+                    if trainwave.station.name != 'RER':
+                        trainwave.endtime_detection(\
+                            rolling_max_window=config_envelope['rolling_max_window'],
+                            time_restricted=config_envelope['time_restricted'],
+                            time_inspect_startglobal=config_envelope['time_inspect_startglobal'],
+                            thr_snr_purcent=config_envelope['thr_snr_purcent'])
+            # Plots
+            # save_envelope_fig_path = os.path.join('captures', '01-02-2020_11-02-2020', \
+            # 'rockfall', 'envelope')
+            save_envelope_fig_path = os.path.join('captures', '01-02-2020_11-02-2020', \
+                'rockfall', 'envelope_rapport')
+            for event in event_list:
+                event.plot(type_graph='envelope', save_fig_path=save_envelope_fig_path, \
+                    show=False, **config_envelope)
+        
+            #Save to pickle format
+            eventlist.save(eventlist_pickle_filepath, override=True)
 
 ################################ DESCRIPTORS ######################################################
 if descriptors:
@@ -202,21 +233,22 @@ if descriptors:
         with open(eventlist_filepath, "rb") as content:
             eventlist = pickle.load(content)
 
-            # Determination of ends of trainwaves
             for event in eventlist:
                 for _, trainwave in event.trainwaves.items():
                     if trainwave.station.name != 'RER':
-                        trainwave.endtime_detection(
-                            rolling_max_window=config_envelope['rolling_max_window'],
-                            time_restricted=config_envelope['time_restricted'],
-                            time_inspect_startglobal=config_envelope['time_inspect_startglobal'],
-                            thr_snr_purcent=config_envelope['thr_snr_purcent']
-                        )
+                        print('snr and noise level:')
+                        print(f"snr {trainwave.snr} and noise {trainwave.noise_level}")
 
             # Ratio form and duration descriptors
             for event in eventlist:
                 for _, trainwave in event.trainwaves.items():
                     if trainwave.station.name != 'RER':
+                        trainwave.endtime_detection(\
+                            rolling_max_window=config_envelope['rolling_max_window'],
+                            time_restricted=config_envelope['time_restricted'],
+                            time_inspect_startglobal=config_envelope['time_inspect_startglobal'],
+                            thr_snr_purcent=config_envelope['thr_snr_purcent'])
+
                         trainwave.form_ratio_and_duration(\
                             rolling_max_window=config_envelope['rolling_max_window'])
 
@@ -226,13 +258,9 @@ if descriptors:
                     if trainwave.station.name != 'RER':
                         trainwave.number_picks(\
                             rolling_max_window=config_envelope['rolling_max_window'])
-            
-            # Create csv file
-            csv_path_rockfalls = os.path.join("dictionaries_data", "01-02-2020_11-02-2020", \
-                "rockfall", "csv")
-            csv_eventlists = os.path.join(csv_path_rockfalls, "eventlists.csv")
-            eventlist.to_csv(csv_eventlists)
-
+        
+            #Save to pickle format
+            eventlist.save(eventlist_pickle_filepath, override=True)
 
 ###################################  AZIMUTS per station ##########################################
 if azimut_distribution:
@@ -253,6 +281,8 @@ if azimut_distribution:
                 save_fig_path=save_fig_azimut
                 )
 
+            eventlist.save(eventlist_pickle_filepath, override=True)
+
 ######################### COMPARAISON specific starts of trainwaves ############################
 # Plots 
 save_compare_fig_path = \
@@ -266,3 +296,19 @@ all_plots_type = ["ti_with_snr", "snr_in_fct_diff_ti", "hist_diff_ti", "dt", "te
 #         save_fig_path=save_compare_fig_path, 
 #         show=False
 #     )
+
+################################### TO CHECK EVENTLIST PICKLE ####################################
+if check_pickle_content :
+    all_eventlists = os.listdir(os.path.join('dictionaries_data', '01-02-2020_11-02-2020', \
+            'rockfall', 'eventlist'))
+    for eventlist_file in all_eventlists:
+        print(f"Eventlist file in process :{eventlist_file}")
+        eventlist_filepath = os.path.join('dictionaries_data', '01-02-2020_11-02-2020', \
+            'rockfall', 'eventlist', eventlist_file)
+        with open(eventlist_filepath, "rb") as content:
+            eventlist = pickle.load(content)
+            for event in eventlist:
+                for _, trainwave in event.trainwaves.items():
+                    print("trainwave.snr :", trainwave.snr)
+                    print("trainwave.noise_level :", trainwave.noise_level)
+                    print("trainwave.duration :", trainwave.duration)
