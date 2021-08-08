@@ -3,6 +3,8 @@ import os
 import json
 import pickle
 
+import pandas as pd
+
 from typing import List
 import numpy as np
 
@@ -14,7 +16,7 @@ from mat4py import loadmat
 from sklearn.metrics import mean_squared_error, r2_score
 
 from locevdet.event import Event
-from locevdet.utils import linear_regression_on_dates
+from locevdet.utils import linear_regression_on_dates, clean_utc_str
 from locevdet.visualisation.plots import demo_con_style, circular_hist
 
 class EventList(list):
@@ -33,6 +35,70 @@ class EventList(list):
     def to_json(self):
         return {str(event): event.to_json() for event in self.events}
 
+    def to_array(self):
+        """
+        Summarize all events'/trainwaves'descriptors and other informations
+        in a array. 
+        NB : This function can be used to prepare X data (train or test) 
+        for machine learning classification.
+        
+        Args:
+            /
+        Returns:
+            Trainwave's descriptors in np.darray
+        """
+        trainwave_infos = {
+            "events" : None,
+            "station" : None,
+            "fc" : None,
+            "azimut": None, 
+            "duration": None, 
+            "form_ratio": None, 
+            "n_pics" : None, 
+            "snr" : None
+        }
+        eventlist_data = None
+        count_trainwave = -1
+        for _, event in enumerate(self):
+            event_data = None
+            eventlist_data_per_event = []
+            trainwave_infos["events"] = clean_utc_str(event.start_global)
+            
+            for _, (_, trainwave) in enumerate(event.trainwaves.items()):
+                count_trainwave +=1
+                trainwave_infos["station"] = trainwave.station.name
+
+                if trainwave.matlab_data is not None:
+                    trainwave_infos["fc"] = trainwave.matlab_data['trainwave']['centralfrequency']
+                    trainwave_infos["azimut"] = trainwave.matlab_data['trainwave']['azimuth']
+                
+                if trainwave.duration is not None:
+                    trainwave_infos["duration"] = trainwave.duration
+
+                if trainwave.form_ratio is not None:
+                    trainwave_infos["form_ratio"] = trainwave.form_ratio
+                
+                if trainwave.picks is not None:
+                    trainwave_infos["n_pics"] = trainwave.picks
+
+                if trainwave.snr is not None:
+                    trainwave_infos["snr"] = trainwave.snr
+
+                trainwave_row = [descriptor for descriptor in trainwave_infos.values()]
+                eventlist_data_per_event.append(trainwave_row)
+            
+                eventlist_data_per_event_array = np.array(eventlist_data_per_event)
+                if event_data is None:
+                    event_data = eventlist_data_per_event_array
+                else:
+                    event_data = np.concatenate((event_data, eventlist_data_per_event_array), axis=0)
+
+            if eventlist_data is None:
+                eventlist_data = event_data
+            else:
+                eventlist_data = np.concatenate((eventlist_data, event_data), axis=0)   
+        return eventlist_data
+
     def save(self, filepath, format_save='PICKLE', override=False):
         if override or not os.path.isfile(filepath):
             if format_save == 'JSON':
@@ -41,7 +107,6 @@ class EventList(list):
             elif format_save == 'PICKLE':
                 with open(filepath, 'wb') as content:
                     pickle.dump(self, content)
-
 
     def set_matlab_data(self, matlab_folder_path, max_time_difference:float=2):
         matlab_filepaths = [
@@ -77,30 +142,22 @@ class EventList(list):
                         all_td_delta = mat["wavetrains"]['timed']
                         all_td = [UTCDateTime(matlab_data['starttime'] + ti) for ti in all_td_delta]
 
-                        ti = min(
-                            all_ti,
-                            key=lambda x:abs(x-trainwave.start_global)
-                        )
-                        ti_index = all_ti.index(ti)
-                        td = UTCDateTime(matlab_data['starttime'] + mat["wavetrains"]['timed'][0])
-                        duration = mat["wavetrains"]['duration'][ti_index]
-                        radial = mat["wavetrains"]['r'][ti_index]
-                        azimuth = mat["wavetrains"]['azimuth']
-
                         matlab_data['trainwave'] = {
-                            'radial_signal': radial,
-                            'initial_time': ti,
+                            'all_radial_signal': mat["wavetrains"]['r'],
+                            # 'radial' : r,
+                            # 'initial_time': ti,
                             'all_initial_times':all_ti,
-                            'central_time': td,
+                            # 'central_time': td,
                             'all_central_times': all_td,
                             'fmin': mat["fmin"],
-                            'centralfrequency': mat["wavetrains"]['centralfrequency'][0],
-                            'duration': duration, 
-                            'azimuth': azimuth
+                            'all_centralfrequency': mat["wavetrains"]['centralfrequency'],
+                            # 'centralfrequency' : fc,
+                            'all_duration': mat["wavetrains"]['duration'],
+                            'azimuth': mat["wavetrains"]['azimuth']
                         }
-                        # Careful if ti too far of start_global
-                        if abs(ti - trainwave.start_global) > 15 :
-                            matlab_data['trainwave'] = None
+                        # # Careful if ti too far of start_global
+                        # if abs(ti - trainwave.start_global) > 15 :
+                        #     matlab_data['trainwave'] = None
                         trainwave.matlab_data = matlab_data
                     else:
                         continue
@@ -117,17 +174,22 @@ class EventList(list):
         events_removed = []
         for event in self:
             utc_start = UTCDateTime(event.start_global)
+            print("event startglobal (delete function) :", utc_start)
             all_snr = []
             stations_order = []
             for _, (_, trainwave) in enumerate(event.trainwaves.items()):
                 stations_order.append(trainwave.station.name)
-                trainwave.snr_calculation(rolling_max_window=rolling_max_window)
+                # if trainwave.snr is None:
+                #     trainwave.snr_calculation(rolling_max_window=rolling_max_window)
                 all_snr.append(trainwave.snr)
+            print("all_snr :", all_snr)
 
             # Condition on all low snr trainwaves
-            if all(i <= general_thr for i in all_snr) :
+
+            if all(snr <= general_thr for snr in all_snr) :
                 self.remove(event)
                 events_removed.append(utc_start)
+                print("event removed")
 
             # and Condition on PER station (with snr >general_thr insted of False Positives event)
             elif 'PER' in stations_order:
@@ -136,9 +198,21 @@ class EventList(list):
                 all_snr_copy = all_snr.copy()
                 all_snr_copy.pop(index_per)
 
-                if snr_per > general_thr and all(i <= general_thr for i in all_snr_copy):
+                if snr_per > general_thr and all(snr <= general_thr for snr in all_snr_copy):
                     self.remove(event)
                     events_removed.append(utc_start)
+                    print("event removed : PER CONDITION")
+
+            elif 'FRE' in stations_order:
+                index_fre = stations_order.index('FRE')
+                snr_fre = all_snr[index_fre]
+                all_snr_copy = all_snr.copy()
+                all_snr_copy.pop(index_fre)
+
+                if snr_fre > general_thr and all(snr <= general_thr for snr in all_snr_copy):
+                    self.remove(event)
+                    events_removed.append(utc_start)
+                    print("event removed : FRE CONDITION")
             
         return events_removed
 
@@ -352,6 +426,76 @@ class EventList(list):
             fig_save_path = os.path.join(save_fig_path, figname)
             fig_comp.savefig(fig_save_path, bbox_inches='tight')
     
+    def azimut_hist(self, list_stations:List[str], save_fig_path:str=None, show:bool=False):
+        """ Plot histogramms of azimuts distribution of the given stations
+        
+        Args:
+            list_stations: list of station's names
+            save_fig_path : Directory path of the folder where the figure will be save
+            show: If True, a matplotlib window will appear. Default False
+        Returns :
+            Plot of the Azimuts' histograms and save it if save_fig_path is not None
+        """
+        plt.close("all")
+
+        fig_azimut, ax = plt.subplots(1, len(list_stations))
+        if save_fig_path is not None:
+            fig_azimut.set_size_inches((20, 10), forward=False)
+        
+        for num, station in enumerate(list_stations):
+            print('num :', num)
+            print("station :", station)
+            azimuts = []
+            mainevent_azimuts = []
+            colors = []
+            for event in self:
+                for _, trainwave in event.trainwaves.items():
+                    if trainwave.station.name == station and trainwave.matlab_data is not None:
+                        
+                        if trainwave.matlab_data['trainwave'] is not None:
+                            start_mainevent = UTCDateTime("2020-02-06T17:00:00")
+                            end_mainevent = UTCDateTime("2020-02-06T19:00:00")
+
+                            matlab_azimut = trainwave.matlab_data['trainwave']['azimuth']
+                            if trainwave.start_global > start_mainevent and \
+                                trainwave.start_global < end_mainevent :
+                                mainevent_azimuts.extend(matlab_azimut)
+                                print('mainevent azi :', matlab_azimut)
+                                
+                            else:
+                                # azimut = round(matlab_azimut/10)*10 # if round per 10°
+                                azimut = matlab_azimut
+                                azimuts.extend(azimut)
+            color_blue = "#13EAC9"
+            color_red = "#FC5A50"
+            colors = [color_blue, color_red]
+
+            azimuts_array = np.asarray(azimuts)
+            mainevent_azimuts_array = np.asarray(mainevent_azimuts)
+
+            labels = ["Azimuts de tous trains d\'ondes confondus", \
+                "Azimuts des trains d\'ondes de l\'effondrement principal"]
+
+            n_bins = 190
+            ax[num].hist((azimuts_array,mainevent_azimuts_array) , n_bins, density=False, \
+                histtype='bar', stacked=True, color=colors, label=labels)
+            ax[num].legend(prop={'size': 10})
+            ax[num].set_title(station, fontsize=15, fontweight='bold')
+            ax[num].grid(True)
+            
+        plt.tight_layout()
+
+        if show is True:
+            plt.show()
+
+        if save_fig_path is not None:
+            stations_str = '_'.join(list_stations)
+            figname = f"azimut_distrib_{stations_str}_01-02-2020_11-02-2020.png"
+            fig_save_path = os.path.join(save_fig_path, figname)
+            fig_azimut.savefig(fig_save_path, bbox_inches='tight')
+            print("Saved")
+
+    
     def azimut_polarhist(self, list_stations:List[str], save_fig_path:str=None, show:bool=False):
         """ Plot polar histogramms of azimuts distribution of the given stations
         
@@ -368,43 +512,39 @@ class EventList(list):
         if save_fig_path is not None:
             fig_azimut.set_size_inches((20, 10), forward=False)
         
-            for num, station in enumerate(list_stations):
-                print('num :', num)
-                print("station :", station)
-                azimuts = []
-                mainevent_azimuts = []
-                colors = []
-                for event in self:
-                    for _, trainwave in event.trainwaves.items():
-                        if trainwave.station.name == station and trainwave.matlab_data is not None:
-                            
-                            if trainwave.matlab_data['trainwave'] is not None:
-                                start_mainevent = UTCDateTime("2020-02-06T17:00:00")
-                                end_mainevent = UTCDateTime("2020-02-06T19:00:00")
+        for num, station in enumerate(list_stations):
+            print('num :', num)
+            print("station :", station)
+            azimuts = []
+            mainevent_azimuts = []
+            for event in self:
+                for _, trainwave in event.trainwaves.items():
+                    if trainwave.station.name == station and trainwave.matlab_data is not None:
+                        
+                        if trainwave.matlab_data['trainwave'] is not None:
+                            start_mainevent = UTCDateTime("2020-02-06T17:00:00")
+                            end_mainevent = UTCDateTime("2020-02-06T19:00:00")
 
-                                matlab_azimut = trainwave.matlab_data['trainwave']['azimuth']
-                                if trainwave.start_global > start_mainevent and \
-                                    trainwave.start_global < end_mainevent :
-                                    mainevent_azimuts.extend(matlab_azimut)
-                                    print('mainevent azi :', matlab_azimut)
-                                    
-                                else:
-                                    # azimut = round(matlab_azimut/10)*10 # if round per 10°
-                                    azimut = matlab_azimut
-                                    color_blue = ["#13EAC9"]*len(matlab_azimut)
-                                    colors.extend(color_blue)
-                                    azimuts.extend(azimut)
+                            matlab_azimut = trainwave.matlab_data['trainwave']['azimuth']
+                            if trainwave.start_global > start_mainevent and \
+                                trainwave.start_global < end_mainevent :
+                                mainevent_azimuts.extend(matlab_azimut)
+                                print('mainevent azi :', matlab_azimut)
+                                
+                            else:
+                                # azimut = round(matlab_azimut/10)*10 # if round per 10°
+                                azimut = matlab_azimut
+                                azimuts.extend(azimut)
                 
-                color_red = ["#FC5A50"]*len(mainevent_azimuts)
-                azimuts.extend(mainevent_azimuts)
-                colors.extend(color_red)
+                color_blue = "#13EAC9"
+                color_red = "#FC5A50"
+                colors = [color_blue, color_red]
 
-                print("azimuts :", azimuts)
-                print("azimuts size :", len(azimuts))
-                print("colors:", colors)
-                print("colors size :", len(colors))
+                azimuts_array = np.asarray(azimuts)
+                mainevent_azimuts_array = np.asarray(mainevent_azimuts)
+            
                 circular_hist(
-                    ax[num], np.asarray(azimuts),
+                    ax[num], (azimuts_array, mainevent_azimuts_array),
                     color_fill=colors, 
                     bins=190, density=False
                     )
