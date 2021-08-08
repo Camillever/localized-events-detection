@@ -13,9 +13,10 @@ def envelope_fct(trace_type:str, rolling_max_window:float=0, **kwargs):
     
     Args:
         trace_type : Specify the type of trace that will have an envelope
+                - "trimmed_filtered"
+                - "trace_filtered"
         rolling_max_window : length of the moving window (in seconds) to calculate the envelope
-        freqmin : minimum frequency of the trace's filter (Hz)
-        freqmax : maximum frequency of the trace's filter (Hz)
+        
         kwargs : other useful arguments as
                 - trace: Trace of one trainwave, component z. ( See Trace from obspy.core.trace)
                 - trace_filtered : Trace of one trainwave already filtered, component z.
@@ -25,6 +26,8 @@ def envelope_fct(trace_type:str, rolling_max_window:float=0, **kwargs):
                         (see trim_trace function from waveform_processing.py )
                 - post_trigger : duration after the start_global to cut the trace, in seconds
                         (see trim_trace function from waveform_processing.py )
+                - freqmin : minimum frequency of the trace's filter (Hz)
+                - freqmax : maximum frequency of the trace's filter (Hz)
     Returns :
         The envelope array of the given trace
     """
@@ -64,9 +67,9 @@ def envelope_fct(trace_type:str, rolling_max_window:float=0, **kwargs):
         if trace is not None:
             analytic_signal = hilbert(trace_filtered)
     
-    envelope = np.abs(analytic_signal)
+    envelope_hilbert = np.abs(analytic_signal)
     if rolling_max_window > 0:
-        envelope = rolling_max(envelope, rolling_max_window)
+        envelope = rolling_max(envelope_hilbert, rolling_max_window)
     return envelope
 
 def snr_calculation_fct(envelope_trim_filt:np.ndarray, envelope_filt:np.ndarray):
