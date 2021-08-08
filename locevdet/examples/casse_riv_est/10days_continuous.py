@@ -185,7 +185,7 @@ if descriptors_eventlist:
 
         ################################### ENVELOPE AND SNR #######################################
         config_envelope={
-            "rolling_max_window" : 4,          # in seconds
+            "rolling_max_window" : 50,          # in number of points
             "thr_snr_purcent" : 1.1,           # 1 = 100%
             "time_restricted" : 5,             # in seconds
             "time_inspect_startglobal" : 1               # in seconds
