@@ -6,3 +6,6 @@ pandas
 matplotlib
 mat4py
 scikit-learn
+plotly==3.10.0
+chart_studio
+wandb
