@@ -149,36 +149,37 @@ class Trainwave():
         index_inspect_signal = int(time_inspect_startglobal / delta)
         thrsedhold_on = np.quantile(envelope[index_start_global - index_inspect_signal : index_start_global + index_inspect_signal], 0.9)
         threshold_snr_end = thr_snr_purcent * self.noise_level
-        triggersnr_samples_detection = trigger_onset(envelope, thrsedhold_on, threshold_snr_end)
+        print(f"thrsedhold_on : {thrsedhold_on} and threshold_snr_end : {threshold_snr_end}")
+        try:
+            triggersnr_samples_detection = trigger_onset(envelope, thrsedhold_on, threshold_snr_end)
+        except IndexError:
+            return None, None
         print("triggersnr_samples_detection :", triggersnr_samples_detection)
 
-        if len(triggersnr_samples_detection[:,1]) == 0:
-            threshold_snr_end = (thr_snr_purcent+ 0.1) * self.noise_level
-            triggersnr_samples_detection = trigger_onset(envelope, thrsedhold_on, threshold_snr_end )
+        if len(triggersnr_samples_detection) != 0:
+            all_endtimes = triggersnr_samples_detection[:,1]
+            all_endtimes_delta = all_endtimes * self.trace_filtered.stats.delta
+            if self.kurtosis_data is not None:
+                all_endtimes_utc = [
+                    self.trace_filtered.stats.starttime + ends
+                    for ends in all_endtimes_delta
+                    if self.trace_filtered.stats.starttime + ends > self.start_global + time_restricted and \
+                        self.trace_filtered.stats.starttime + ends > self.kurtosis_data['start_specific'] + time_restricted
+                ]
+            else:
+                all_endtimes_utc = [
+                    self.trace_filtered.stats.starttime + ends
+                    for ends in all_endtimes_delta
+                    if self.trace_filtered.stats.starttime + ends > self.start_global + time_restricted
+                ]
+            self.all_endtimes_delta = all_endtimes_delta
 
-        all_endtimes = triggersnr_samples_detection[:,1]
-        all_endtimes_delta = all_endtimes * self.trace_filtered.stats.delta
-        if self.kurtosis_data is not None:
-            all_endtimes_utc = [
-                self.trace_filtered.stats.starttime + ends
-                for ends in all_endtimes_delta
-                if self.trace_filtered.stats.starttime + ends > self.start_global + time_restricted and \
-                    self.trace_filtered.stats.starttime + ends > self.kurtosis_data['start_specific'] + time_restricted
-            ]
-        else:
-            all_endtimes_utc = [
-                self.trace_filtered.stats.starttime + ends
-                for ends in all_endtimes_delta
-                if self.trace_filtered.stats.starttime + ends > self.start_global + time_restricted
-            ]
-        self.all_endtimes_delta = all_endtimes_delta
-
-        if len(all_endtimes_utc) != 0:
-            end_specific = UTCDateTime(all_endtimes_utc[0])
-            self.end_specific = end_specific
-        else :
-            end_specific = None
-        return all_endtimes_utc, end_specific
+            if len(all_endtimes_utc) != 0:
+                end_specific = UTCDateTime(all_endtimes_utc[0])
+                self.end_specific = end_specific
+            else :
+                end_specific = None
+            return all_endtimes_utc, end_specific
     
     def form_ratio_and_duration(self, rolling_max_window):
         """ Calculate disymetry (form_ratio) and the duration descriptors of an event per trainwave.
