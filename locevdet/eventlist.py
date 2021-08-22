@@ -244,9 +244,13 @@ class EventList(list):
         plt.close("all")
 
         list_HIM_starts_specific, list_HIM_ti, diff_ti_HIM = [], [], []
+        list_diff_global_spe_HIM =[]
+        list_HIM_start_global = []
         list_HIM_nsr = []
 
         list_FRE_starts_specific, list_FRE_ti,  diff_ti_FRE = [], [], []
+        list_FRE_start_global = []
+        list_diff_global_spe_FRE =[]
         list_FRE_nsr = []
 
         fig_comp = plt.figure('01-02-2020_11-02-2020')
@@ -256,22 +260,33 @@ class EventList(list):
         for event in self:
             for _, trainwave in event.trainwaves.items():
                 
-                if trainwave.matlab_data is not None and trainwave.kurtosis_data is not None:
+                if trainwave.matlab_data is not None :
                     ti = trainwave.matlab_data['trainwave']['initial_time']
-                    start_specific = trainwave.kurtosis_data["start_specific"]
                     if trainwave.station.name == 'HIM':
                         list_HIM_ti.append(ti)
-                        list_HIM_starts_specific.append(UTCDateTime(start_specific))
-                        diff_ti_HIM.append(
-                            np.abs(ti - start_specific))
-                        list_HIM_nsr.append(trainwave.snr)
-
                     elif trainwave.station.name == 'FRE':
                         list_FRE_ti.append(ti)
+
+                elif trainwave.kurtosis_data is not None:
+                    start_specific = trainwave.kurtosis_data["start_specific"]
+
+                    if trainwave.station.name == 'HIM':
+                        list_HIM_start_global.append(trainwave.start_global)
+                        
+                        list_HIM_starts_specific.append(UTCDateTime(start_specific))
+                        # diff_ti_HIM.append(
+                        #     np.abs(ti - start_specific))
+                        list_HIM_nsr.append(trainwave.snr)
+                        list_diff_global_spe_HIM.append(np.abs(trainwave.start_global - start_specific))
+
+                    elif trainwave.station.name == 'FRE':
+                        list_FRE_start_global.append(trainwave.start_global)
+                        
                         list_FRE_starts_specific.append(UTCDateTime(start_specific))
-                        diff_ti_FRE.append(
-                            np.abs(ti - start_specific))
+                        # diff_ti_FRE.append(
+                        #     np.abs(ti - start_specific))
                         list_FRE_nsr.append(trainwave.snr)
+                        list_diff_global_spe_FRE.append(np.abs(trainwave.start_global - start_specific))
         print("list_HIM_ti :", list_HIM_ti)
         print("list_HIM_starts_specific :", list_HIM_starts_specific)
         print("diff_ti_HIM :", diff_ti_HIM)
@@ -326,15 +341,15 @@ class EventList(list):
             ax1.grid(True)
 
         elif type_graph == "snr_in_fct_diff_ti":
-            ax1.scatter(diff_ti_HIM, list_HIM_nsr)
-            ax1.set_xlabel('abs( ti - start_specific)     (secondes)')
+            ax1.scatter(list_diff_global_spe_HIM, list_HIM_nsr)
+            ax1.set_xlabel('abs( start_global - start_specific)     (secondes)')
             ax1.grid(True)
         
         elif type_graph == "temporal_snr_diff_ti":
             him = ax1.scatter(diff_ti_HIM, list_HIM_ti_date64, c=list_HIM_nsr, cmap=plt.cm.get_cmap('RdYlGn'))
             fig_comp.colorbar(him, ax=ax1, label='SNR')
             ax1.yaxis.set_major_formatter(myFmt)
-            ax1.set_xlabel('abs( ti - start_specific)     (secondes)')
+            ax1.set_xlabel('abs( start_global - start_specific)     (secondes)')
             ax1.grid(True)
         
         elif type_graph == "dt":
@@ -395,8 +410,8 @@ class EventList(list):
             ax2.grid(True)
         
         elif type_graph == "snr_in_fct_diff_ti":
-            ax2.scatter(diff_ti_FRE, list_FRE_nsr)
-            ax2.set_xlabel('abs( ti - start_specific)     (secondes)')
+            ax2.scatter(list_diff_global_spe_FRE, list_FRE_nsr)
+            ax2.set_xlabel('abs( start_global - start_specific)     (secondes)')
             ax2.grid(True)
 
         elif type_graph == "temporal_snr_diff_ti":
