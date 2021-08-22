@@ -34,16 +34,16 @@ stalta_detection_events = True
 add_RER = False
 add_matlab_results = False
 kurtosis_tool_params = False
-kurtosis = False
-envelope_enddetection = True
-descriptors = True
+kurtosis = True
+envelope_enddetection = False
+descriptors = False
 azimut_distribution = False
+
+analysis_plots = True
 
 check_pickle_content = False
 ################################## STA-LTA #######################################################
-
-if stalta_detection_events:
-    config_stalta = {
+config_stalta = {
         # Filter
         "freqmin": 2,
         "freqmax": 10,
@@ -58,9 +58,9 @@ if stalta_detection_events:
         # Remove useless events (duplicate, false)
         "minimum_time" : 2,
 
-        "rolling_max_window" : 4  # in seconds
+        "rolling_max_window" : 50  # in seconds
     }
-
+if stalta_detection_events:
     event_list, duplicate_ev_removed, false_ev_removed, _ = stalta_detect_events(
         folder_in=mseeds_path,
         all_seismogram=all_seismogram_reduced,
@@ -129,9 +129,9 @@ if add_matlab_results :
 ##################################### KURTOSIS #####################################################
 # The tool to determine parameters for kurtosis
 config_kurtosis_tool = {
-        "win_init" : 100,                   # in seconds
-        "thr_off_init" : 0.75,
-        "thr_off_init " : 0.25
+        "thr_on_init" : 0.75,
+        "thr_off_init" : 0.25,
+        "win_init" : 100                  # in seconds
     }
 if kurtosis_tool_params :
     all_eventlists = os.listdir(os.path.join('dictionaries_data', '01-02-2020_11-02-2020', \
@@ -186,7 +186,7 @@ if kurtosis :
 
 # ################################### ENVELOPE AND End event ######################################
 config_envelope={
-    "rolling_max_window" : 50,  # number of points (100pts = 1s if sampling_rate = 100Hz)
+    "rolling_max_window" : config_stalta["rolling_max_window"],  # number of points 
     "thr_snr_purcent" : 1.1,           # 1 = 100%
     "time_restricted" : 5,             # in seconds
     "time_inspect_startglobal" : 1               # in seconds
@@ -201,7 +201,8 @@ if envelope_enddetection:
         with open(eventlist_filepath, "rb") as content:
             eventlist = pickle.load(content)
           
-            # Determination of ends of trainwaves
+            save_envelope_fig_path = os.path.join('captures', '01-02-2020_11-02-2020', \
+                'rockfall', 'envelope_rapport')
             for event in eventlist:
                 for _, trainwave in event.trainwaves.items():
                     if trainwave.station.name != 'RER':
@@ -210,12 +211,8 @@ if envelope_enddetection:
                             time_restricted=config_envelope['time_restricted'],
                             time_inspect_startglobal=config_envelope['time_inspect_startglobal'],
                             thr_snr_purcent=config_envelope['thr_snr_purcent'])
-            # Plots
-            # save_envelope_fig_path = os.path.join('captures', '01-02-2020_11-02-2020', \
-            # 'rockfall', 'envelope')
-            save_envelope_fig_path = os.path.join('captures', '01-02-2020_11-02-2020', \
-                'rockfall', 'envelope_rapport')
-            for event in event_list:
+            print("Envelope captures")
+            for event in tqdm(eventlist):
                 event.plot(type_graph='envelope', save_fig_path=save_envelope_fig_path, \
                     show=False, **config_envelope)
         
@@ -286,16 +283,30 @@ if azimut_distribution:
 ######################### COMPARAISON specific starts of trainwaves ############################
 # Plots 
 save_compare_fig_path = \
-    os.path.join("captures", "01-02-2020_11-02-2020", "rockfall", "comparaison_ti")
+        os.path.join("captures", "01-02-2020_11-02-2020", "rockfall", "comparaison_ti")
+if analysis_plots :
+    all_plots_type = [\
+        # "ti_with_snr", 
+        "snr_in_fct_diff_ti", 
+        # "hist_diff_ti", 
+        # "dt", 
+        # "temporal_snr_diff_ti"
+    ]
 
-all_plots_type = ["ti_with_snr", "snr_in_fct_diff_ti", "hist_diff_ti", "dt", "temporal_snr_diff_ti"]
-
-# for type_plot in all_plots_type :
-#     event_list.plots_time_compare_HIM_FRE(
-#         type_graph=type_plot, 
-#         save_fig_path=save_compare_fig_path, 
-#         show=False
-#     )
+    all_eventlists = os.listdir(os.path.join('dictionaries_data', '01-02-2020_11-02-2020', \
+        'rockfall', 'eventlist'))
+    for eventlist_file in all_eventlists:
+        print(f"Eventlist file in process :{eventlist_file}")
+        eventlist_filepath = os.path.join('dictionaries_data', '01-02-2020_11-02-2020', \
+            'rockfall', 'eventlist', eventlist_file)
+        with open(eventlist_filepath, "rb") as content:
+            eventlist = pickle.load(content)
+            for type_plot in all_plots_type :
+                eventlist.plots_time_compare_HIM_FRE(
+                    type_graph=type_plot, 
+                    save_fig_path=save_compare_fig_path, 
+                    show=False
+                )
 
 ################################### TO CHECK EVENTLIST PICKLE ####################################
 if check_pickle_content :
