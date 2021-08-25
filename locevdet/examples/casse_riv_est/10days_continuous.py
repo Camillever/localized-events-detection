@@ -39,9 +39,9 @@ continuous_seismograms = [*before_07fev_seismograms, *after_07fev_seismograms]
 
 download_eventlist = False
 descriptors_eventlist = False
-convertion_mat = True
+convertion_mat = False
 
-check_pickle_content = False
+check_pickle_content = True
 
 
 ################################## EVENTS DETECTION BY STA-LTA ####################################
